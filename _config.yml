@@ -35,4 +35,4 @@ kramdown:
 
 # Custom CSS
 # Create a file named _sass/custom/custom.scss and add your custom CSS styles
-custom_sass: _sass/custom/custom.scss
+custom_sass: assets/custom.scss
