@@ -1,0 +1,80 @@
+// Import the default theme's base styles
+@import "just-the-docs";
+
+// Custom font
+$font-family-main: 'Roboto', sans-serif;
+
+// Custom colors
+$color-primary: #3498db;
+$color-secondary: #2ecc71;
+$color-accent: #e74c3c;
+$color-headers: #f1c40f;
+
+// Custom background colors
+$color-bg: #1f1f1f;
+$color-bg-secondary: #2b2b2b;
+$color-bg-code: #282828;
+
+// Apply custom colors
+body {
+  background-color: $color-bg;
+  color: $color-text;
+}
+
+// Headers
+h1, h2, h3, h4, h5, h6 {
+  color: $color-headers;
+}
+
+// Links
+a {
+  color: $color-primary;
+  text-decoration: none;
+
+  &:hover {
+    color: $color-secondary;
+    text-decoration: underline;
+  }
+}
+
+// Navigation menu
+.nav-list {
+  background-color: $color-bg-secondary;
+}
+
+.nav-list-item {
+  &:hover {
+    background-color: $color-bg;
+  }
+}
+
+// Table of contents
+.toc-list {
+  background-color: $color-bg-secondary;
+}
+
+.toc-list-item {
+  &:hover {
+    background-color: $color-bg;
+  }
+}
+
+// Code blocks
+.highlight {
+  background-color: $color-bg-code;
+  border-radius: 5px;
+  padding: 1em;
+}
+
+// Inline code
+code {
+  background-color: $color-bg-code;
+  border-radius: 3px;
+  padding: 0.2em 0.4em;
+}
+
+// Blockquotes
+blockquote {
+  border-left: 5px solid $color-accent;
+  padding-left: 1em;
+}
