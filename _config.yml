@@ -1,5 +1,6 @@
 # Site settings
 title: Inertial Navigation Transformer
+email: your-email@example.com
 description: >- # this means to ignore newlines
   A description for the Inertial Navigation Transformer project.
 baseurl: "" # the subpath of your site, e.g. /blog
@@ -8,24 +9,15 @@ github_username: tonton-golio
 
 # Build settings
 markdown: kramdown
-theme: jekyll-theme-cayman
-remote_theme: "pmarsceill/just-the-docs@v0.3.3"
+theme: minimal-mistakes-jekyll
 plugins:
   - jekyll-feed
   - jekyll-seo-tag
 
-# Just the Docs settings
-# This section is specific to the "Just the Docs" theme
-just_the_docs:
-  search_enabled: true
-  search_full_content: true
-  aux_links:
-    "GitHub Repo":
-      - "https://github.com/tonton-golio/inertial_navigation_transformer"
-  color_scheme: dark
+# Minimal Mistakes theme settings
+minimal_mistakes_skin: dark
 
 # Syntax highlighting
-# This section configures the Rouge syntax highlighting library
 highlighter: rouge
 kramdown:
   syntax_highlighter_opts:
@@ -35,4 +27,4 @@ kramdown:
 
 # Custom CSS
 # Create a file named _sass/custom/custom.scss and add your custom CSS styles
-custom_sass: assets/custom.scss
+#custom_sass: assets/custom.scss
