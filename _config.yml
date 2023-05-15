@@ -6,25 +6,3 @@ description: >- # this means to ignore newlines
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "https://tonton-golio.github.io/inertial_navigation_transformer" # the base hostname & protocol for your site
 github_username: tonton-golio
-
-# Build settings
-markdown: kramdown
-theme: minimal-mistakes-jekyll
-plugins:
-  - jekyll-feed
-  - jekyll-seo-tag
-
-# Minimal Mistakes theme settings
-minimal_mistakes_skin: dark
-
-# Syntax highlighting
-highlighter: rouge
-kramdown:
-  syntax_highlighter_opts:
-    css_class: 'highlight'
-    line_numbers: true
-    line_number_start: 1
-
-# Custom CSS
-# Create a file named _sass/custom/custom.scss and add your custom CSS styles
-#custom_sass: assets/custom.scss
