@@ -1,8 +1,0 @@
-# Site settings
-title: Inertial Navigation Transformer
-email: your-email@example.com
-description: >- # this means to ignore newlines
-  A description for the Inertial Navigation Transformer project.
-baseurl: "" # the subpath of your site, e.g. /blog
-url: "https://tonton-golio.github.io/inertial_navigation_transformer" # the base hostname & protocol for your site
-github_username: tonton-golio
