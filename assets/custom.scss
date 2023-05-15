@@ -109,3 +109,32 @@ img {
     margin-top: 0.5em;
   }
   
+
+
+  // Add this to your custom.scss file
+.search-input {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 14px;
+    border: 1px solid $color-border;
+    background-color: $color-bg;
+    color: $color-text;
+    border-radius: 4px;
+  }
+  
+  .search-submit {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 40px;
+    border: none;
+    background-color: transparent;
+    color: $color-text;
+    cursor: pointer;
+  
+    &:hover {
+      color: $color-primary;
+    }
+  }
+  

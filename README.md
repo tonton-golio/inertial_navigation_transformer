@@ -3,7 +3,11 @@ Use transformer for inertial navigation
 
 Typically IMU data is processed as shown in the flowchart below:
 
-![IMU interpretation flowchart](https://github.com/tonton-golio/inertial_navigation_transformer/blob/main/assets/IMU_interpretation_flowchart.png?raw=true)
+
+<figure>
+  <img src="https://github.com/tonton-golio/inertial_navigation_transformer/blob/main/assets/IMU_interpretation_flowchart.png?raw=true" alt="IMU interpretation flowchart">
+  <figcaption>IMU interpretation flowchart</figcaption>
+</figure>
 
 
 
