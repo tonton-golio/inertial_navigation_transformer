@@ -78,3 +78,34 @@ blockquote {
   border-left: 5px solid $color-accent;
   padding-left: 1em;
 }
+
+
+// Images
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+  }
+  
+  .figure {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+  }
+  
+  .figure img {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+  }
+  
+  figcaption {
+    display: block;
+    text-align: center;
+    font-size: 0.8em;
+    color: $color-text-light;
+    margin-top: 0.5em;
+  }
+  
