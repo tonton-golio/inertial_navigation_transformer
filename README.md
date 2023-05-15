@@ -21,6 +21,7 @@ Note that at the first time step we need to determine the orientation in the wor
 - [] Implement neural network or for replacing `utils.Theta(angular_velocity, timestepsize)`. This should use `tango/ori` as ground truth, and take `synced/gyro` as inputs. For now, set the initial orientation equal to the groundtruth. Subsequently, implement larger network which also takes `synced/acce` and `synced/magnet` to predict world frame, instead of getting initial orientation from ground truth.
     * consider advantages of different architectures: feed-forward, RNN, LSTM, transformer.
     * We found that initial orientation introduces an issue
+    * A dysfynctional version of this has been added to `playground_notebooks/quaternion_update_anton.ipynb`
 - [] Make table of data contents, so we get an overview of what we are working with.
 - [] set up github pages: https://docs.github.com/en/pages/quickstart
 
