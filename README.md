@@ -3,13 +3,10 @@ Use transformer for inertial navigation
 
 Typically IMU data is processed as shown in the flowchart below:
 
-
 <figure>
   <img src="https://github.com/tonton-golio/inertial_navigation_transformer/blob/main/assets/IMU_interpretation_flowchart.png?raw=true" alt="IMU interpretation flowchart">
   <figcaption>IMU interpretation flowchart</figcaption>
 </figure>
-
-
 
 The raw gyroscope and accelerometer readings enter on the left. The gyroscope data is then bias corrected and integrated to obtain a orientation change. 
 > I have implemented the `utils.Theta(angular_velocity, timestepsize)` which returns a 4x4 matrix which updates the previous quaternion (see `playground_notebooks/quaternion_update_anton.ipynb` for example).
@@ -22,8 +19,6 @@ Note that at the first time step we need to determine the orientation in the wor
 | Date | Task | Status | Notes |
 | --- | --- | --- | --- |
 | 05-15 | First meeting | Done | We got the data loaded and distributed initial tasks |
-
-
 
 
 
@@ -62,7 +57,6 @@ Note that at the first time step we need to determine the orientation in the wor
 * paper on coning and sculling (integration techniques) https://sci-hub.hkvisa.net/10.2514/2.4718# This paper shows us how to convert a coning algorithm to its sculling algorithm equivalent, or vice versa. (probably no need to look at this)
 * https://sci-hub.hkvisa.net/10.3390/s111009182 -- a great introduction!
 * inertial navigation primer: https://www.vectornav.com/resources/inertial-navigation-primer/math-fundamentals/math-coning
-
 
 ## ideas
 * throw raw acc, gyro and magnet at LSTM -> predict pose
