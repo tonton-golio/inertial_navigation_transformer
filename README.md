@@ -37,6 +37,22 @@ Note that at the first time step we need to determine the orientation in the wor
 - [] set up github pages: https://docs.github.com/en/pages/quickstart
 
 
+# Personal tasks
+|Person | Date added| Task | date completed  | Status | Notes |
+| --- | --- | --- | --- | --- | --- |
+| MICHAEL | 05-15 | clone github + open data + watch introductory youtube videos | 05-15 | Done | |
+| Adrian | 05-15 | clone github + open data + watch introductory youtube videos | 05-15 | Done | |
+| Anton | 05-15 | clone github + open data + watch introductory youtube videos | 05-15 | Done | |
+| Chris | 05-15 | clone github + open data + watch introductory youtube videos |  |  | |
+| Simon | 05-15 | clone github + open data + watch introductory youtube videos |  |  | |
+
+| MICHAEL | 05-15 | make overview of data contents | 05-15 | Done | |
+| MICHAEL | 05-15 | forsøge at fodre et NN: accelerions data samt tango ori, og forsøge at forudsige position | 05-15 |  | |
+| Anton | 05-15 | Implement analytical quaternion update | 05-15 | Done | See `playground_notebooks/quaternion_update_anton.ipynb` |
+| Anton | 05-15 | Implement body frame to world frame | 05-15 | Done | See `playground_notebooks/bodyFrame_to_worldFrame.ipynb` |
+| Adrian | 05-15 | Implement NN for replacing `utils.Theta(angular_velocity, timestepsize)` |  |  | |
+
+
 
 ## links to get into the topic:
 * The problem with IMU position estimation https://www.youtube.com/watch?v=_q_8d0E3tDk

@@ -1,6 +1,8 @@
 import h5py
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import numpy as np
+
 
 
 def get_all_datasets(hdf_file):
@@ -64,7 +66,7 @@ def load_data(file_path='/Users/antongolles/Documents/work/Rokoko/velocity_est/d
 
 #####################
 
-# Kalman filter for gyro: https://sci-hub.hkvisa.net/10.3390/s111009182
+# Get quat update from gyro: https://sci-hub.hkvisa.net/10.3390/s111009182
 def is_column_vector(w):
     try:
         w = w.reshape(3,1)
@@ -125,26 +127,18 @@ def Theta(w=np.array([1,1,2]).reshape(3,1), dt=.1):
 #     q_pred[i] = Theta(w[i]*factor, dt=dt)@q_pred[i-1]
 
 
-
-
-
-
-
 #############   Getting world frame
+def get_body2world_rot(m0,a0):
+    EAST = np.cross(m0,a0)
+    EAST/=np.linalg.norm(EAST)
+    DOWN = a0                                          # maybe a minus sign is needed
+    DOWN/=np.linalg.norm(DOWN)
+    NORTH = np.cross(EAST,DOWN)
+    NORTH/=np.linalg.norm(NORTH)
 
-
-# EAST = np.cross(m[0],a[0])
-# EAST/=np.linalg.norm(EAST)
-# DOWN = a[0]                                          # maybe a minus sign is needed
-# DOWN/=np.linalg.norm(DOWN)
-# NORTH = np.cross(EAST,DOWN)
-# NORTH/=np.linalg.norm(NORTH)
-
-
-
-# # body frame to world frame
-# R = np.array([NORTH, EAST, DOWN]).T
-# R, NORTH, EAST, DOWN
+    # body frame to world frame
+    R = np.array([NORTH, EAST, DOWN]).T
+    return R
 
 def rotation_matrix_2_quaternion(R):                 # they may not be in the right order
     # R is a 3x3 rotation matrix
@@ -156,4 +150,17 @@ def rotation_matrix_2_quaternion(R):                 # they may not be in the ri
     q[3] = (R[1,0] - R[0,1])/(4*q[0])
     return q
 
-# rotation_matrix_2_quaternion(np.linalg.inv(R))
+def quat_2_rotation_matrix(q):
+    # q is a 4x1 quaternion
+    # R is a 3x3 rotation matrix
+    R = np.zeros((3,3))
+    R[0,0] = 1 - 2*(q[2]**2 + q[3]**2)
+    R[0,1] = 2*(q[1]*q[2] - q[0]*q[3])
+    R[0,2] = 2*(q[1]*q[3] + q[0]*q[2])
+    R[1,0] = 2*(q[1]*q[2] + q[0]*q[3])
+    R[1,1] = 1 - 2*(q[1]**2 + q[3]**2)
+    R[1,2] = 2*(q[2]*q[3] - q[0]*q[1])
+    R[2,0] = 2*(q[1]*q[3] - q[0]*q[2])
+    R[2,1] = 2*(q[2]*q[3] + q[0]*q[1])
+    R[2,2] = 1 - 2*(q[1]**2 + q[2]**2)
+    return R
