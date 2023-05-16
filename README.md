@@ -29,3 +29,28 @@ Note that at the first time step we need to determine the orientation in the wor
 - [] Make table of data contents, so we get an overview of what we are working with.
 - [] set up github pages: https://docs.github.com/en/pages/quickstart
 
+
+
+## links to get into the topic:
+* The problem with IMU position estimation https://www.youtube.com/watch?v=_q_8d0E3tDk
+* basic kalman filter introduction: https://www.youtube.com/watch?v=5HuN9iL-zxU
+* get NED values for acc: https://www.youtube.com/watch?v=T9jXoG0QYIA
+* strapdown: https://www.youtube.com/watch?v=knroQcjAgPo
+* Romberg integration: https://www.youtube.com/watch?v=HtkylnbJklE
+* paper on coning and sculling (integration techniques) https://sci-hub.hkvisa.net/10.2514/2.4718# This paper shows us how to convert a coning algorithm to its sculling algorithm equivalent, or vice versa. (probably no need to look at this)
+* https://sci-hub.hkvisa.net/10.3390/s111009182 -- a great introduction!
+* inertial navigation primer: https://www.vectornav.com/resources/inertial-navigation-primer/math-fundamentals/math-coning
+
+
+## ideas
+* throw raw acc, gyro and magnet at LSTM -> predict pose
+  * hyperparameter-sweep
+* transform raw inputs and measure the deacrease in training time, or increase in performance, or decrease in required NN size
+* try transformer network
+* Raw inegration for baseline
+* kalman filter for better baseline (https://sci-hub.hkvisa.net/10.3390/s111009182)
+* identify magnetic field disurbtions 
+* single step (or few step) for neural network. 
+  - Input vector is then: current state s_i (position and orientation) and imu readings d_{i:i+n}. 
+  - Output is next state: s_n
+* visualization tool (potentially 3d)
