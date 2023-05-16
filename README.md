@@ -30,6 +30,8 @@ Note that at the first time step we need to determine the orientation in the wor
     * A dysfynctional version of this has been added to `playground_notebooks/quaternion_update_anton.ipynb`
 - [] Make table of data contents, so we get an overview of what we are working with.
 - [] set up github pages: https://docs.github.com/en/pages/quickstart
+- [] set up streamlit pag
+
 
 
 # Personal tasks
@@ -45,6 +47,7 @@ Note that at the first time step we need to determine the orientation in the wor
 | Anton | 05-15 | Implement analytical quaternion update | 05-15 | Done | See `playground_notebooks/quaternion_update_anton.ipynb` |
 | Anton | 05-15 | Implement body frame to world frame | 05-15 | Done | See `playground_notebooks/bodyFrame_to_worldFrame.ipynb` |
 | Adrian | 05-15 | Implement NN for replacing `utils.Theta(angular_velocity, timestepsize)` |  |  | |
+| Anton | 05-16 | Implement simple Transformer network | 05-16 | Done | see `playground_notebooks/transformer_initial_anton.ipynb` |
 
 
 
@@ -70,3 +73,4 @@ Note that at the first time step we need to determine the orientation in the wor
   - Input vector is then: current state s_i (position and orientation) and imu readings d_{i:i+n}. 
   - Output is next state: s_n
 * visualization tool (potentially 3d)
+* streamlit app for visualization
