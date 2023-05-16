@@ -18,6 +18,13 @@ Note that at the first time step we need to determine the orientation in the wor
 > This is implemented in `playground_notebooks/bodyFrame_to_worldFrame.ipynb`.
 
 
+## Timeline
+| Date | Task | Status | Notes |
+| --- | --- | --- | --- |
+| 05-15 | First meeting | Done | We got the data loaded and distributed initial tasks |
+
+
+
 
 
 ## Todo
