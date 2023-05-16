@@ -45,7 +45,6 @@ Note that at the first time step we need to determine the orientation in the wor
 | Anton | 05-15 | clone github + open data + watch introductory youtube videos | 05-15 | Done | |
 | Chris | 05-15 | clone github + open data + watch introductory youtube videos |  |  | |
 | Simon | 05-15 | clone github + open data + watch introductory youtube videos |  |  | |
-
 | MICHAEL | 05-15 | make overview of data contents | 05-15 | Done | |
 | MICHAEL | 05-15 | forsøge at fodre et NN: accelerions data samt tango ori, og forsøge at forudsige position | 05-15 |  | |
 | Anton | 05-15 | Implement analytical quaternion update | 05-15 | Done | See `playground_notebooks/quaternion_update_anton.ipynb` |
