@@ -5,6 +5,16 @@ import h5py
 import numpy as np
 import os
 
+import numpy as np
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import TensorDataset, DataLoader
+
 def get_all_datasets(hdf_file):
     """
     Function to return all datasets from an HDF5 file.
@@ -217,6 +227,14 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
         print(e)
 
 
+def split_data(X, y, test_size=0.2):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
+    return X_train, X_test, y_train, y_test
+
+def calculate_position_difference(y):
+    for i in range(len(y)):
+        y[i] -= y[i][0]
+    return y
 ##
 
 # we need a cool dataset class, that can be used for training
