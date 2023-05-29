@@ -216,7 +216,6 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
     except NameError as e:
         print(e)
 
-    
 
 ##
 
