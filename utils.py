@@ -145,6 +145,7 @@ def load_split_data(params, folder_path = 'C:\\Users\\Simon Andersen\\Documents\
 
 
 
+##
 
 # we need a cool dataset class, that can be used for training
 # we should take a batch of data like 1000 timesteps, but perhaps they should not all be this length
