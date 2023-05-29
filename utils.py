@@ -1,8 +1,9 @@
 import h5py
+import os
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import numpy as np
-
+import re
 
 
 def get_all_datasets(hdf_file):
@@ -56,6 +57,92 @@ def load_data(file_path='/Users/antongolles/Documents/work/Rokoko/velocity_est/d
         nice_dict_contents(data_dict, print_keys=True)
 
     return data_dict
+
+
+def create_sequences(X, y, seq_length):
+    X_seq, y_seq = [], []
+    for i in range(0, len(X) - seq_length + 1, seq_length):
+        X_seq.append(X[i:i+seq_length])
+        y_seq.append(y[i:i+seq_length])
+    return np.array(X_seq), np.array(y_seq)
+
+def load_much_data(Ntrain, Nval, folder_path = 'C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\\AppliedML\\Project 2\\train_dataset_1', \
+                   columns = ['pose/tango_ori', 'pose/tango_pos', 'synced/gyro', 'synced/acce', 'synced/magnet']):
+    """
+    Ntrain: No. of training data points
+    Nval: No. of val. data points
+    folder_path: Must lead to a folder with subfolders, with each subfolder containing af hdf5 file
+    """
+    Nloaded_points = 0
+    # Initialize data_dict
+    data_dict = {key: None for key in columns}
+
+    # Sort the subfolders based on the custom sorting key
+    #sorted_folders = sorted(os.listdir(folder_path), key=folder_sort_key)
+    
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            if Nloaded_points > Ntrain + Nval:
+                continue
+            if file.endswith(".hdf5"):
+                file_path = os.path.join(root, file)
+                print(f"Reading file: {file_path}")
+                print(file_path)
+                # Read the HDF5 file
+                with h5py.File(file_path, "r") as hdf_file:
+                    # Access and process the contents of the HDF5 file
+                    # Example: Print all the dataset names in the file
+
+                    new_data_dict = load_data(file_path)
+                    Nloaded_points += new_data_dict[columns[0]].shape[0]
+                # add values to data_dict
+                for key in columns:
+                    if data_dict[key] is None:
+                        data_dict[key] = new_data_dict[key]
+                    else:
+                        data_dict[key] = np.vstack([data_dict[key], new_data_dict[key]])
+    ## Make sure we have Ntrain+Nval entries
+    for key in columns:
+        data_dict[key] = data_dict[key][:Ntrain + Nval]
+    return data_dict
+
+def load_split_data(params, folder_path = 'C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\\AppliedML\\Project 2\\train_dataset_1',):
+    """
+    params must have the following arguments
+    params ={'Ntrain':, 'Nval':, 'seq_len': 'input': , 'output':}, where
+    seq_len: sequence length > 1
+    input: list of input features. 
+            For example: ['pose/tango_ori', 'pose/tango_pos', 'synced/gyro']
+    output: list of output features. 
+            For example: ['pose/tango_ori']
+
+    returns: An [Nrows/seg_len]x[seq_len]x[Nfeatures] array  X, where
+             Nfeatures is the total number of feature dimensions in the input list. 
+             The input features in X are in the same order as the input argument in params
+             An array y with N/seq_len rows and Noutputfeatures columns, where Noutputfeatures is the
+             no. of feature dimensions of the output parameter.
+    """
+    Ntrain, Nval = params['Ntrain'], params['Nval']
+    seq_len = params['seq_len']
+    input_features = params['input']
+    output = params['output']
+    columns = input_features + [output]
+ 
+    data_dict = load_much_data(Ntrain, Nval, folder_path = folder_path, columns=columns)
+
+    # Construct x and y
+    for i, key in enumerate(input_features):
+        if i == 0:
+            X = data_dict[key]
+        else:
+            X = np.hstack([X, data_dict[key]])    
+    y = data_dict[output]
+    ## Reshape x and y
+    print(X.shape, y.shape)
+    X_reshaped, y_reshaped = create_sequences(X, y, seq_length=seq_len)
+
+    return X_reshaped, y_reshaped
+
 
 
 
