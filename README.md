@@ -81,7 +81,8 @@ The data is obtained from ... Below is a table of the data contents.
 ### Simon
 | Date added| Task | date completed  | Status | Notes |
 | --- | --- | --- | --- | --- |
-| 05-15 | clone github + open data + watch introductory youtube videos |  |  | |
+| 05-15 | clone github + open data + watch introductory youtube videos | 12-05  | Done | |
+| 25-05 | Go through and optimize Anton's NN | 28-05 |Done | |
 
 ### Chris
 | Date added| Task | date completed  | Status | Notes |
