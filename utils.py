@@ -1,11 +1,31 @@
+from collections import defaultdict
+from functools import partial
+from sklearn.preprocessing import StandardScaler
 import h5py
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import numpy as np
+import os
 
+import numpy as np
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import TensorDataset, DataLoader
 
 def get_all_datasets(hdf_file):
+    """
+    Function to return all datasets from an HDF5 file.
+
+    Args:
+    hdf_file : h5py.File object
+
+    Returns:
+    datasets : dict
+        Dictionary with dataset names as keys and numpy arrays as values.
+    """
     datasets = {}
 
     def collect_datasets(name, obj):
@@ -16,39 +36,49 @@ def get_all_datasets(hdf_file):
     return datasets
 
 def nice_dict_contents(data_dict, print_keys=False):
-    outer_keys = {}
+    """
+    Function to print the contents of the dictionary in a hierarchical manner.
+    
+    Args:
+    data_dict : dict
+        Dictionary containing the data.
+    print_keys : bool, optional
+        Flag indicating whether to print the keys. Defaults to False.
+    """
+    outer_keys = defaultdict(lambda: defaultdict(list))
+    
     for key in data_dict.keys():
-        num_levels = len(key.split('/'))
-        outer = key.split('/')[0]
-        if num_levels == 2:
-            inner = key.split('/')[1]
-            if outer not in outer_keys.keys():
-                outer_keys[outer] = []
-            outer_keys[outer].append(inner)
+        split_key = key.split('/')
+        
+        if len(split_key) == 2:
+            outer, inner = split_key
+            outer_keys[outer][inner]
         else:
-            middle = key.split('/')[1]
-            inner = key.split('/')[2]
-            if outer not in outer_keys.keys():
-                outer_keys[outer] = {}
-            if middle not in outer_keys[outer].keys():
-                outer_keys[outer][middle] = []
+            outer, middle, inner = split_key
             outer_keys[outer][middle].append(inner)
-
-
+            
     if print_keys:
         print('CONTENTS OF HDF5 FILE:')
-        for key, v in outer_keys.items():
-            print(key)
-            if isinstance(v, list):
-                #for i in v:
-                print('\t', ', '.join(v))
-            else:
-                for k, v in v.items():
-                    print('\t', k)
-                    #for i in v:
-                    print('\t\t', ', '.join(v))
+        for outer_key, outer_value in outer_keys.items():
+            print(outer_key)
+            for inner_key, inner_values in outer_value.items():
+                print('\t', inner_key)
+                print('\t\t', ', '.join(inner_values))
 
-def load_data(file_path='/Users/antongolles/Documents/work/Rokoko/velocity_est/data/data_from_RoNIN/train_dataset_1/a000_1/data.hdf5', verbose=False):
+def load_data(file_path, verbose=False):
+    """
+    Function to load the data from a given file path.
+
+    Args:
+    file_path : str
+        Path to the data file.
+    verbose : bool, optional
+        If True, print the contents of the file.
+
+    Returns:
+    data_dict : dict
+        Dictionary with dataset names as keys and numpy arrays as values.
+    """
     with h5py.File(file_path, 'r') as hdf_file:
         data_dict = get_all_datasets(hdf_file)
     
@@ -57,7 +87,155 @@ def load_data(file_path='/Users/antongolles/Documents/work/Rokoko/velocity_est/d
 
     return data_dict
 
+def create_sequences(X, y, seq_length):
+    """
+    Function to create sequences from the input data.
 
+    Args:
+    X : numpy array
+        Input data.
+    y : numpy array
+        Target data.
+    seq_length : int
+        Sequence length.
+
+    Returns:
+    X_seq, y_seq : numpy arrays
+        Sequenced input and target data.
+    """
+    X_seq = [X[i:i+seq_length] for i in range(0, len(X) - seq_length + 1, seq_length)]
+    y_seq = [y[i:i+seq_length] for i in range(0, len(y) - seq_length + 1, seq_length)]
+    return np.array(X_seq), np.array(y_seq)
+
+def load_much_data(Ntrain, Nval, folder_path, columns):
+    """
+    Function to load data from multiple HDF5 files.
+
+    Args:
+    Ntrain : int
+        Number of training instances.
+    Nval : int
+        Number of validation instances.
+    folder_path : str
+        Path to the data directory.
+    columns : list
+        List of column names.
+
+    Returns:
+    data_dict : dict
+        Dictionary with dataset names as keys and numpy arrays as values.
+    """
+    data_dict = {key: None for key in columns}
+    Nloaded_points = 0
+    
+    for root, dirs, files in os.walk(folder_path):
+        if Nloaded_points > Ntrain + Nval:
+            break
+        for file in files:
+            if file.endswith(".hdf5"):
+                file_path = os.path.join(root, file)
+                with h5py.File(file_path, "r") as hdf_file:
+                    new_data_dict = load_data(file_path)
+                    Nloaded_points += new_data_dict[columns[0]].shape[0]
+                # add values to data_dict
+                for key in columns:
+                    if data_dict[key] is None:
+                        data_dict[key] = new_data_dict[key]
+                    else:
+                        data_dict[key] = np.vstack([data_dict[key], new_data_dict[key]])
+    # Ensure we have Ntrain+Nval entries
+    for key in columns:
+        data_dict[key] = data_dict[key][:Ntrain + Nval]
+    return data_dict
+
+def normalize_features(X):
+    """
+    Function to normalize the features.
+
+    Args:
+    X : numpy array
+        Input data.
+
+    Returns:
+    X_normalized : numpy array
+        Normalized input data.
+    scaler : sklearn.preprocessing.StandardScaler
+        The scaler used for normalization. Useful for inverse transformation.
+    """
+    scaler = StandardScaler()
+    X_normalized = scaler.fit_transform(X)
+    return X_normalized, scaler
+
+def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\\AppliedML\\Project 2\\train_dataset_1', **kwargs):
+    """
+    Function to load, split, and preprocess the data.
+
+    Args:
+    folder_path : str
+        Path to the data directory.
+    **kwargs : other parameters to control the data loading and processing.
+            - Ntrain: number of training instances
+            - Nval: number of validation instances
+            - seq_len: sequence length, must be > 1
+            - input: list of input features, e.g. ['pose/tango_ori', 'pose/tango_pos', 'synced/gyro']
+            - output: list of output features, e.g. ['pose/tango_ori']
+            - normalize: boolean, whether to normalize the data or not.
+
+    Returns:
+    X_reshaped : numpy array
+        The processed and reshaped input data.
+    y_reshaped : numpy array
+        The processed and reshaped target data.
+    """
+    params = {'Ntrain': 1000, 'Nval': 100, 'seq_len': 10, 'input': [], 'output': [], 'normalize': False}
+    params.update(kwargs)
+
+    allowed_columns = [
+        'pose/ekf_ori', 'pose/tango_ori', 'pose/tango_pos',
+        'synced/acce', 'synced/game_rv', 'synced/grav', 'synced/gyro', 'synced/gyro_uncalib', 'synced/linacce', 'synced/magnet', 'synced/rv',
+        'raw/imu/acce', 'raw/imu/game_rv', 'raw/imu/gps', 'raw/imu/gravity', 'raw/imu/gyro', 'raw/imu/gyro_uncalib', 'raw/imu/linacce', 'raw/imu/magnet', 'raw/imu/magnetic_rv', 'raw/imu/pressure', 'raw/imu/rv', 'raw/imu/step', 'raw/imu/wifi_address', 'raw/imu/wifi_values',
+        'raw/tango/acce', 'raw/tango/game_rv', 'raw/tango/gps', 'raw/tango/gravity', 'raw/tango/gyro', 'raw/tango/gyro_uncalib', 'raw/tango/linacce', 'raw/tango/magnet', 'raw/tango/magnetic_rv', 'raw/tango/pressure', 'raw/tango/rv', 'raw/tango/step', 'raw/tango/tango_adf_pose', 'raw/tango/tango_pose', 'raw/tango/wifi_address', 'raw/tango/wifi_values',
+    ]
+
+    
+    try:
+        Ntrain, Nval = params['Ntrain'], params['Nval']
+        seq_len = params['seq_len']
+        input_features = params['input']
+        output_features = params['output']
+        columns = input_features + output_features
+        
+        # make sure columns are in allowed_columns
+        for column in columns:
+            if column not in allowed_columns:
+                raise NameError(f'ERROR: Column "{column}" not in allowed columns: {allowed_columns}')
+
+        data_dict = load_much_data(Ntrain, Nval, folder_path=folder_path, columns=columns)
+
+        X = np.hstack([data_dict[key] for key in input_features])
+        
+        if params['normalize']:
+            X, _ = normalize_features(X)
+            
+        y = np.hstack([data_dict[key] for key in output_features])
+        X_reshaped, y_reshaped = create_sequences(X, y, seq_length=seq_len)
+
+        return X_reshaped, y_reshaped
+    except KeyError as e:
+        print(f'Missing necessary parameter: {e}')
+    except NameError as e:
+        print(e)
+
+
+def split_data(X, y, test_size=0.2):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
+    return X_train, X_test, y_train, y_test
+
+def calculate_position_difference(y):
+    for i in range(len(y)):
+        y[i] -= y[i][0]
+    return y
+##
 
 # we need a cool dataset class, that can be used for training
 # we should take a batch of data like 1000 timesteps, but perhaps they should not all be this length
