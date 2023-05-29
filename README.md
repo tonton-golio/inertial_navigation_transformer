@@ -47,10 +47,10 @@ The data is obtained from ... Below is a table of the data contents.
 ## Timeline
 | Date | Task | Status | Notes |
 | --- | --- | --- | --- |
-| 05-15 | First meeting | Done | We got the data loaded and distributed initial tasks |
+| 05-15 | First meeting   | Done | We got the data loaded and distributed initial tasks |
 | 05-24 | excercise class | Done | Simon and Anton worked on the quaternion update and rewrote the README |
-
-| 06-14 | deadline for project |  |  |
+| 05-29 | Group meeting   |      | |
+| 06-14 | DEADLINE        |  |  |
 
 
 ## Personal tasks
@@ -60,9 +60,10 @@ The data is obtained from ... Below is a table of the data contents.
 | --- | --- | --- | --- | --- |
 | 05-15 | clone github + open data + watch introductory youtube videos | 05-15 | Done | |
 | 05-15 | make overview of data contents |  | Single dataset done | missing full |
-| 05-15 | Feed a NN: accelerions data along with tango ori, and predict positons | |  | |
+| 05-15 | Feed a NN: accelerions data along with tango ori, and predict positions | |  | |
+| 05-29 | Read RoNIN Paper|||
 
-
+ 
 ### Anton
 | Date added| Task | date completed  | Status | Notes |
 | --- | --- | --- | --- | --- |
@@ -81,7 +82,9 @@ The data is obtained from ... Below is a table of the data contents.
 ### Simon
 | Date added| Task | date completed  | Status | Notes |
 | --- | --- | --- | --- | --- |
-| 05-15 | clone github + open data + watch introductory youtube videos |  |  | |
+| 05-15 | clone github + open data + watch introductory youtube videos | 12-05  | Done | |
+| 25-05 | Go through and optimize Anton's NN | 28-05 |Done | |
+| 28-05 | Implement LSTM | | | |
 
 ### Chris
 | Date added| Task | date completed  | Status | Notes |
