@@ -133,7 +133,9 @@ def load_much_data(Ntrain, Nval, folder_path, columns):
             break
         for file in files:
             if file.endswith(".hdf5"):
+                
                 file_path = os.path.join(root, file)
+                print('Loading file:', file_path)
                 with h5py.File(file_path, "r") as hdf_file:
                     new_data_dict = load_data(file_path)
                     Nloaded_points += new_data_dict[columns[0]].shape[0]
@@ -228,7 +230,10 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
 
 
 def split_data(X, y, test_size=0.2):
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
+    indicies = np.arange(X.shape[0])
+    indicies_train = indicies[:int((1-test_size)*X.shape[0])]
+    indicies_test = indicies[int((1-test_size)*X.shape[0]):]
+    X_train, X_test, y_train, y_test = X[indicies_train], X[indicies_test], y[indicies_train], y[indicies_test]
     return X_train, X_test, y_train, y_test
 
 def calculate_position_difference(y):
