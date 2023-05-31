@@ -23,6 +23,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
+from ahrs.filters.madgwick import Madgwick
+from ahrs.filters.mahony import Mahony
+from ahrs.filters import EKF
+from ahrs.common.orientation import acc2q
+
+
 sys.path.append('inertial_navigation_transformer')
 from utils import load_much_data, load_split_data
 
@@ -49,8 +55,8 @@ folder_path = 'C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\\AppliedML\\Projec
 ### FUNCTIONS ----------------------------------------------------------------------------------
 
 
-# plot
-def plot_quat(q_gts, q_preds, xs, names = ['analytical', 'NN']):
+# plotNoutput
+def plot_quat(q_gts, q_preds, xs, names = ['analytical', 'NN'], Noutput_features = 4):
     if type(q_preds) is not list:
         q_preds = [q_preds]
     if type(q_gts) is not list:
@@ -58,8 +64,8 @@ def plot_quat(q_gts, q_preds, xs, names = ['analytical', 'NN']):
     if type(xs) is not list:
         xs = [xs]
     
-    fig, ax = plt.subplots(len(q_preds), 4, figsize=(12, 4*len(q_preds)))
-    ax = ax.reshape(-1, 4)
+    fig, ax = plt.subplots(len(q_preds), Noutput, figsize=(12, Noutput*len(q_preds)))
+    ax = ax.reshape(-1, Noutput)
     idx = 0
     for q_pred, q_gt,x, name in zip(q_preds, q_gts,xs, names):
         print('q_pred', q_pred.shape, 'q_gt', q_gt.shape, 'x', x.shape)
@@ -78,6 +84,26 @@ def plot_quat(q_gts, q_preds, xs, names = ['analytical', 'NN']):
     fig.suptitle('Quaternion Update test')
     plt.tight_layout()
 
+class Net(nn.Module):
+          def __init__(self, input_size, hidden_size=7, num_layers = 1,\
+                        output_size = 4, seq_len = 1, dropout = 0):
+               super().__init__()
+               self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, \
+                                   num_layers = num_layers, batch_first=True, dropout = dropout)
+               #self.relu = nn.ReLU()
+               self.linear1 = nn.Linear(hidden_size, 5 * hidden_size)
+               self.linear2 = nn.Linear(5 * hidden_size, output_size)
+                    
+          def forward(self, x):
+               x, _ = self.lstm(x)  # Run LSTM and store the hidden layer outputs
+               x = x[:, -1, :]  # take the last hidden layer
+               #x = self.relu(x) # a normal dense layer
+               x = self.linear1(x)
+               x = self.linear2(x)
+               return x
+
+
+
 
 ### MAIN ---------------------------------------------------------------------------------------
 
@@ -85,30 +111,32 @@ def main():
     ### Implement vanilla LSTM
     ## Set central parameters
      # Set how many observations to combine into one datapoint
-     Ntrain = 60_000
-     Ntest = 5_000
+     Ntrain = 50_000
+     Ntest = 1500
      # set sequence length
      seq_len = 5
      # Set whether to include acceleration and magnetic data when training 
-     include_acc = False
-     include_lin_acc = True
+     include_acc = True
+     include_lin_acc = False
      include_mag = True
      normalize = True
      # set whether to include truth data when training. 
      # ... and to include the previous test prediction as the input when testing net batch
      use_truth_input = True
 
-     learning_rate = 0.0001
+     learning_rate = 0.0003
      # Set loss function
      criterion = nn.L1Loss()
      # set n_epochs
-     num_epochs = 3
+     num_epochs = 5
      # set size of hidden layers
      hidden_size = 100
      # set batch size
-     batch_size = seq_len * hidden_size
+     batch_size = 128
      # set no. of layers in LSTM
-     num_layers = 6
+     num_layers = 3
+     # set the dropout layer strength
+     dropout_layer = 0.1
 
      Ntest_fraction = Ntest / Ntrain
      # Decide which fraction of the training data should be used for validation
@@ -142,19 +170,7 @@ def main():
      y = y.reshape(y.shape[0], - 1)
      Nfeatures = X.shape[-1]
 
-     class Net(nn.Module):
-          def __init__(self, input_size, hidden_size=7, num_layers = 1, output_size = 4, seq_len = 1):
-               super().__init__()
-               self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, \
-                                   num_layers = num_layers, batch_first=True)
-               self.linear = nn.Linear(hidden_size, output_size)
-               
-          def forward(self, x):
-               x, _ = self.lstm(x)  # Run LSTM and store the hidden layer outputs
-               x = x[:, -1, :]  # take the last hidden layer
-               x = self.linear(x) # a normal dense layer
-               return x
-
+     
      # setting device on GPU if available, else CPU
      device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
      print('Using device:', device)
@@ -173,7 +189,7 @@ def main():
 
 
      net = Net(input_size=Nfeatures, output_size = output_size,hidden_size=hidden_size,\
-                num_layers=num_layers,  seq_len=seq_len)
+                num_layers=num_layers,  seq_len=seq_len, dropout=dropout_layer)
      # mount model to device
      net.to(device)
      # number of params
@@ -206,7 +222,7 @@ def main():
      # dataloader
      train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
      val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
-     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
      # optimizer
      optimizer = optim.Adam(net.parameters(), lr=learning_rate)
@@ -247,6 +263,7 @@ def main():
           with torch.no_grad():
                for i, (inputs, labels) in enumerate(test_loader):
                     inputs, labels = inputs.to(device), labels.to(device)
+     
                     if i > 0:
                          if inputs.shape[0] != y_pred_tensor.shape[0]:
                               break
@@ -286,13 +303,17 @@ def main():
      q_preds = y_pred
      xs = np.arange(len(q_gts))
 
-     fig, ax = plt.subplots(nrows=2,ncols=2)
+     nrows = 1 if Noutput_features == 3 else 2
+     ncols = 3 if Noutput_features == 3 else 2
+     fig, ax = plt.subplots(nrows=nrows,ncols=ncols)
      ax = ax.flatten()
      for i, axx in enumerate(ax):
-          axx.plot(xs, q_gts[:,i], label = 'GT', color='green',)
-          axx.plot(xs, q_preds[:,i], label = 'Pred', color='red',)
-          axx.legend()
-  
+          try:
+               axx.plot(xs, q_gts[:,i], label = 'GT', color='green',)
+               axx.plot(xs, q_preds[:,i], label = 'Pred', color='red')
+               axx.legend()
+          except:
+               break
      plt.show()
 
 
