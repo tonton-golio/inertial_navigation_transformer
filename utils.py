@@ -87,7 +87,7 @@ def load_data(file_path, verbose=False):
 
     return data_dict
 
-def create_sequences(X, y, seq_length):
+def create_sequences(X, y, seq_length, overlap=1):
     """
     Function to create sequences from the input data.
 
@@ -98,16 +98,21 @@ def create_sequences(X, y, seq_length):
         Target data.
     seq_length : int
         Sequence length.
+    overlap : int, optional
+        Overlap between sequences. Defaults to 1.
 
     Returns:
     X_seq, y_seq : numpy arrays
         Sequenced input and target data.
     """
-    X_seq = [X[i:i+seq_length] for i in range(0, len(X) - seq_length + 1, seq_length)]
-    y_seq = [y[i:i+seq_length] for i in range(0, len(y) - seq_length + 1, seq_length)]
+    X_seq = []
+    y_seq = []
+    for i in range(0, len(X) - seq_length + 1, seq_length-overlap):
+        X_seq.append(X[i:i+seq_length])
+        y_seq.append(y[i:i+seq_length])
     return np.array(X_seq), np.array(y_seq)
 
-def load_much_data(Ntrain, Nval, folder_path, columns):
+def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_length=1, verbose=False, num_datasets=1, random_start=False):
     """
     Function to load data from multiple HDF5 files.
 
@@ -125,32 +130,63 @@ def load_much_data(Ntrain, Nval, folder_path, columns):
     data_dict : dict
         Dictionary with dataset names as keys and numpy arrays as values.
     """
-    data_dict = {key: None for key in columns}
+    data = {
+        'X-train': {key: None for key in columns_X},
+        'y-train': {key: None for key in columns_y},
+        'X-test': {key: None for key in columns_X},
+        'y-test': {key: None for key in columns_y},
+    }
     Nloaded_points = 0
+    # get control of directories
+    dirs = os.listdir(folder_path)
+    if '.DS_Store' in dirs: dirs.remove('.DS_Store') # remove .DS_Store if present
+    test_dir = dirs[:1]
+    train_dirs = dirs[1:num_datasets+1]
+    print(f'using {test_dir} for testing and the remaining ({len(train_dirs)}) for training')
     
-    for root, dirs, files in os.walk(folder_path):
-        if Nloaded_points > Ntrain + Nval:
-            break
-        for file in files:
-            if file.endswith(".hdf5"):
-                
-                file_path = os.path.join(root, file)
-                print('Loading file:', file_path)
-                with h5py.File(file_path, "r") as hdf_file:
-                    new_data_dict = load_data(file_path)
-                    Nloaded_points += new_data_dict[columns[0]].shape[0]
-                # add values to data_dict
-                for key in columns:
-                    if data_dict[key] is None:
-                        data_dict[key] = new_data_dict[key]
-                    else:
-                        data_dict[key] = np.vstack([data_dict[key], new_data_dict[key]])
-    # Ensure we have Ntrain+Nval entries
-    for key in columns:
-        data_dict[key] = data_dict[key][:Ntrain + Nval]
-    return data_dict
 
-def normalize_features(X):
+    N_points_per_dir = max(int(N_train/len(train_dirs)), seq_length)
+    N_points_per_dir = N_points_per_dir - N_points_per_dir % seq_length
+    n_dirs_to_use = int(N_train/N_points_per_dir)
+    train_dirs = train_dirs[:n_dirs_to_use+1]
+    N_points = N_points_per_dir * len(train_dirs)
+    
+    print(f'Loading a total of {N_train}, with {N_points_per_dir} points from each of {len(train_dirs)} directories')
+    for dir in dirs:
+        file_path = os.path.join(folder_path, dir, 'data.hdf5')
+        if verbose: print('Loading file:', file_path)
+        with h5py.File(file_path, "r") as hdf_file:
+            new_data_dict = load_data(file_path)
+            Nloaded_points += N_points_per_dir
+        if dir in test_dir:
+            start = 0 if not random_start else np.random.randint(0, 20000)
+            for key in columns_X:
+                if data['X-test'][key] is None:
+                    data['X-test'][key] = new_data_dict[key][start:start+N_test]
+                else:
+                    data['X-test'][key] = np.vstack([data['X-test'][key], new_data_dict[key][:N_test]])
+            for key in columns_y:
+                if data['y-test'][key] is None:
+                    data['y-test'][key] = new_data_dict[key][start:start+N_test]
+                else:
+                    data['y-test'][key] = np.vstack([data['y-test'][key], new_data_dict[key][:N_test]])
+        elif dir in train_dirs:
+            for key in columns_X:
+                if data['X-train'][key] is None:
+                    data['X-train'][key] = new_data_dict[key][start:start+N_points_per_dir]
+                else:
+                    data['X-train'][key] = np.vstack([data['X-train'][key], new_data_dict[key][:N_points_per_dir]])
+            for key in columns_y:
+                if data['y-train'][key] is None:
+                    data['y-train'][key] = new_data_dict[key][start:start+N_points_per_dir]
+                else:
+                    data['y-train'][key] = np.vstack([data['y-train'][key], new_data_dict[key][:N_points_per_dir]])
+        if Nloaded_points >= N_points:
+            break
+
+    return data
+
+def normalize_features(X, scaler=None):
     """
     Function to normalize the features.
 
@@ -164,7 +200,8 @@ def normalize_features(X):
     scaler : sklearn.preprocessing.StandardScaler
         The scaler used for normalization. Useful for inverse transformation.
     """
-    scaler = StandardScaler()
+    if scaler is None:
+        scaler = StandardScaler()
     X_normalized = scaler.fit_transform(X)
     return X_normalized, scaler
 
@@ -176,20 +213,24 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
     folder_path : str
         Path to the data directory.
     **kwargs : other parameters to control the data loading and processing.
-            - Ntrain: number of training instances
-            - Nval: number of validation instances
-            - seq_len: sequence length, must be > 1
+            - N_points: number of training instances
+            - seq_len: sequence length, must be >= 1
             - input: list of input features, e.g. ['pose/tango_ori', 'pose/tango_pos', 'synced/gyro']
             - output: list of output features, e.g. ['pose/tango_ori']
             - normalize: boolean, whether to normalize the data or not.
+            - shuffle: boolean, whether to shuffle the data or not.
+            - verbose: boolean, whether to print information about the data or not.
 
     Returns:
-    X_reshaped : numpy array
-        The processed and reshaped input data.
-    y_reshaped : numpy array
-        The processed and reshaped target data.
+    X_train : numpy array
+    y_train : numpy array
+    X_test : numpy array
+    y_test : numpy array
+
+
+
     """
-    params = {'Ntrain': 1000, 'Nval': 100, 'seq_len': 10, 'input': [], 'output': [], 'normalize': False}
+    params = {'N_train': 1000,'N_test': 100, 'seq_len': 10, 'input': [], 'output': [], 'normalize': False, 'shuffle': True, 'verbose': True, 'num_datasets':1, 'random_start':True}
     params.update(kwargs)
 
     allowed_columns = [
@@ -200,34 +241,38 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
     ]
 
     
-    try:
-        Ntrain, Nval = params['Ntrain'], params['Nval']
-        seq_len = params['seq_len']
-        input_features = params['input']
-        output_features = params['output']
-        columns = input_features + output_features
+
+
+    # make sure columns are in allowed_columns
+    columns = params['output'] + params['input']
+    for column in columns:
+        if column not in allowed_columns:
+            raise NameError(f'ERROR: Column "{column}" not in allowed columns: {allowed_columns}')
+
+    data = load_much_data(folder_path=folder_path, 
+                            columns_X=params['input'], columns_y=params['output'], 
+                            N_train=params['N_train'], N_test=params['N_test'],
+                            verbose=params['verbose'], 
+                            seq_length=params['seq_len'], 
+                            num_datasets=params['num_datasets'],
+                            random_start=params['random_start'])
+    
+    
+
+    X_train = np.hstack([data['X-train'][key] for key in params['input']])
+    y_train = np.hstack([data['y-train'][key] for key in params['output']])
+    X_test = np.hstack([data['X-test'][key] for key in params['input']])
+    y_test = np.hstack([data['y-test'][key] for key in params['output']])
+    if params['normalize']:
+        X_train, scaler = normalize_features(X_train)
+        # use the same scaler for test data
+        X_test, _ = normalize_features(X_test, scaler=scaler)
+
         
-        # make sure columns are in allowed_columns
-        for column in columns:
-            if column not in allowed_columns:
-                raise NameError(f'ERROR: Column "{column}" not in allowed columns: {allowed_columns}')
+    X_train_reshaped, y_train_reshaped = create_sequences(X_train, y_train, seq_length=params['seq_len'])
+    X_test_reshaped, y_test_reshaped = create_sequences(X_test, y_test, seq_length=params['seq_len'])
 
-        data_dict = load_much_data(Ntrain, Nval, folder_path=folder_path, columns=columns)
-
-        X = np.hstack([data_dict[key] for key in input_features])
-        
-        if params['normalize']:
-            X, _ = normalize_features(X)
-            
-        y = np.hstack([data_dict[key] for key in output_features])
-        X_reshaped, y_reshaped = create_sequences(X, y, seq_length=seq_len)
-
-        return X_reshaped, y_reshaped
-    except KeyError as e:
-        print(f'Missing necessary parameter: {e}')
-    except NameError as e:
-        print(e)
-
+    return X_train_reshaped, y_train_reshaped, X_test_reshaped, y_test_reshaped
 
 def split_data(X, y, test_size=0.2):
     indicies = np.arange(X.shape[0])
