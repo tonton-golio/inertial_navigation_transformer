@@ -79,22 +79,21 @@ def plot_quat(q_gts, q_preds, xs, names = ['analytical', 'NN']):
     plt.tight_layout()
 
 
-
 ### MAIN ---------------------------------------------------------------------------------------
-
-
 
 def main():
     ### Implement vanilla LSTM
     ## Set central parameters
      # Set how many observations to combine into one datapoint
      Ntrain = 60_000
-     Ntest = 2_000
+     Ntest = 5_000
      # set sequence length
      seq_len = 5
      # Set whether to include acceleration and magnetic data when training 
-     include_acc = True
-     include_mag = False
+     include_acc = False
+     include_lin_acc = True
+     include_mag = True
+     normalize = True
      # set whether to include truth data when training. 
      # ... and to include the previous test prediction as the input when testing net batch
      use_truth_input = True
@@ -103,7 +102,7 @@ def main():
      # Set loss function
      criterion = nn.L1Loss()
      # set n_epochs
-     num_epochs = 300
+     num_epochs = 3
      # set size of hidden layers
      hidden_size = 100
      # set batch size
@@ -111,30 +110,33 @@ def main():
      # set no. of layers in LSTM
      num_layers = 6
 
-
      Ntest_fraction = Ntest / Ntrain
      # Decide which fraction of the training data should be used for validation
      Nval_fraction = .2
 
-     Noutput_features = 4 # length of output data
-
+     
      input_features = ['synced/gyro']
-     if use_truth_input:
-          input_features.append('pose/tango_ori')
      if include_acc:
           input_features.append('synced/acce')
+     if include_lin_acc:
+          input_features.append('synced/linacce')
      if include_mag:
           input_features.append('synced/magnet')
+     if use_truth_input:
+          input_features.append('pose/tango_ori')
   
      output_features = ['pose/tango_ori']
      params ={'Ntrain': Ntrain, 'Nval': Ntest, 'seq_len': seq_len,\
                'input': input_features, 'output': output_features}
+     if normalize:
+          params.update({'normalize': True})
 
      X, y = load_split_data(folder_path=folder_path, **params)
+     Noutput_features = y.shape[-1] # length of output data
 
      # Discard last point of X and first point of y
-     X = X[:-1]
-     y = y[1:]
+     X[:,1:,-Noutput_features:] = 0
+     y = y
 
      #reshape y
      y = y.reshape(y.shape[0], - 1)
@@ -180,9 +182,11 @@ def main():
      
      ## Prepare and split data
      # train test split
-     train_features, X_test_arr, train_output, y_test_arr = train_test_split(X, y, test_size=Ntest_fraction, shuffle=False)
+     train_features, X_test_arr, train_output, y_test_arr = \
+          train_test_split(X, y, test_size=Ntest_fraction, shuffle=False)
      # Now split train data into train and val. data
-     X_train_arr, X_val_arr, y_train_arr, y_val_arr = train_test_split(train_features, train_output, \
+     X_train_arr, X_val_arr, y_train_arr, y_val_arr = \
+          train_test_split(train_features, train_output, \
                                                        test_size=Ntest_fraction, shuffle=False)
      print(train_features.shape, X_test_arr.shape, train_output.shape, y_test_arr.shape)
      print(X_train_arr.shape, X_val_arr.shape, y_train_arr.shape, y_val_arr.shape)
@@ -200,8 +204,8 @@ def main():
      test_dataset = torch.utils.data.TensorDataset(X_test, y_test)
 
      # dataloader
-     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False)
-     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
      test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
      # optimizer
@@ -247,7 +251,10 @@ def main():
                          if inputs.shape[0] != y_pred_tensor.shape[0]:
                               break
                          else:
-                              inputs[:,:,-Noutput_features:] = y_pred_tensor.reshape(y_pred_tensor.shape[0], seq_len, Noutput_features)
+                              inputs[:,:,-Noutput_features:] = 0
+                              inputs[:,0,-Noutput_features:] = \
+                                   y_pred_tensor.reshape(y_pred_tensor.shape[0], seq_len, Noutput_features)[:,0,:]
+                              #inputs[:,:,-Noutput_features:] = y_pred_tensor.reshape(y_pred_tensor.shape[0], seq_len, Noutput_features)
                     outputs = net(inputs)
                     # copy to cpu and store prediction
                     outputs_cpu = torch.Tensor.cpu(outputs)
