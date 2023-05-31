@@ -83,6 +83,7 @@ def plot_quat(q_gts, q_preds, xs, names = ['analytical', 'NN']):
 ### MAIN ---------------------------------------------------------------------------------------
 
 
+
 def main():
     ### Implement vanilla LSTM
     ## Set central parameters
