@@ -93,7 +93,7 @@ def main():
     ### Implement vanilla LSTM
     ## Set central parameters
      # Set how many observations to combine into one datapoint
-     Ntrain = 60_000
+     Ntrain = 2_000
      Ntest = 2_000
      num_datasets = 5
      # set sequence length
@@ -113,11 +113,11 @@ def main():
      # Set loss function
      criterion = nn.L1Loss()
      # set n_epochs
-     num_epochs = 5
+     num_epochs = 1
      # set size of hidden layers
      hidden_size = 100
      # set batch size
-     batch_size = 256#seq_len * hidden_size
+     batch_size = 256 #seq_len * hidden_size
      # set no. of layers in LSTM
      num_layers = 8
 
@@ -129,6 +129,7 @@ def main():
      
 
      input_features = ['synced/gyro']
+     output_features = ['pose/tango_ori']
      if include_acc:
           input_features.append('synced/acce')
      if include_mag:
@@ -136,10 +137,10 @@ def main():
      if include_lin_acc:
           input_features.append('synced/linacce')
      if use_truth_input:
-          input_features.append('pose/tango_ori')
+          input_features.append(output_features[0])
 
   
-     output_features = ['pose/tango_ori']
+     
 
 
      params = {'N_train': Ntrain, 
@@ -281,10 +282,15 @@ def main():
                          if inputs.shape[0] != y_pred_tensor.shape[0]:
                               break
                          else:
+                              if i == 1:
+                                   print("test input shape: ", inputs.shape)         
+                                   print(inputs)
+                                   print("y_pred_tensor shape: ", y_pred_tensor.shape)    
+                                   print(y_pred_tensor)
                               inputs[:,:,-Noutput_features:] = 0
                               #inputs[:,0,-Noutput_features:] = y_pred_tensor.reshape(y_pred_tensor.shape[0], seq_len, Noutput_features)[:,0,:]
                               inputs[:,0,-Noutput_features:] = y_pred_tensor.reshape(y_pred_tensor.shape[0], Noutput_features)[0]
-
+                              
                     #print(inputs)
                     outputs = net(inputs)
                     #print(outputs)

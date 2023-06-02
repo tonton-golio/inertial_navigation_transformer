@@ -113,6 +113,9 @@ def main():
      # Set how many observations to combine into one datapoint
      Ntrain = 50_000
      Ntest = 1500
+     num_datasets = 10
+     random_start = True
+     overlap = 1
      # set sequence length
      seq_len = 5
      # Set whether to include acceleration and magnetic data when training 
@@ -128,13 +131,13 @@ def main():
      # Set loss function
      criterion = nn.L1Loss()
      # set n_epochs
-     num_epochs = 5
+     num_epochs = 100
      # set size of hidden layers
-     hidden_size = 100
+     hidden_size = 80
      # set batch size
      batch_size = 128
      # set no. of layers in LSTM
-     num_layers = 3
+     num_layers = 4
      # set the dropout layer strength
      dropout_layer = 0.1
 
@@ -143,6 +146,7 @@ def main():
      Nval_fraction = .2
 
      
+     output_features = ['pose/tango_ori']
      input_features = ['synced/gyro']
      if include_acc:
           input_features.append('synced/acce')
@@ -151,68 +155,53 @@ def main():
      if include_mag:
           input_features.append('synced/magnet')
      if use_truth_input:
-          input_features.append('pose/tango_ori')
-  
-     output_features = ['pose/tango_ori']
-     params ={'Ntrain': Ntrain, 'Nval': Ntest, 'seq_len': seq_len,\
-               'input': input_features, 'output': output_features}
-     if normalize:
-          params.update({'normalize': True})
-
-     X, y = load_split_data(folder_path=folder_path, **params)
-     Noutput_features = y.shape[-1] # length of output data
-
-     # Discard last point of X and first point of y
-     X[:,1:,-Noutput_features:] = 0
-     y = y
-
-     #reshape y
-     y = y.reshape(y.shape[0], - 1)
-     Nfeatures = X.shape[-1]
-
+          input_features.append(output_features[0])
      
-     # setting device on GPU if available, else CPU
-     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-     print('Using device:', device)
 
-     #Additional Info when using cuda
-     if device.type == 'cuda':
-          print(torch.cuda.get_device_name(0))
-          print('Memory Usage:')
-          print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
-          print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB')
-
-     # initialize model
-     output_size = torch.from_numpy(np.array([seq_len, Noutput_features])).int()
-     output_size = torch.tensor([seq_len, Noutput_features])
-     output_size = seq_len * Noutput_features
-
-
-     net = Net(input_size=Nfeatures, output_size = output_size,hidden_size=hidden_size,\
-                num_layers=num_layers,  seq_len=seq_len, dropout=dropout_layer)
-     # mount model to device
-     net.to(device)
-     # number of params
-     num_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
-     print('Number of parameters: %d' % num_params)
+     params = {'N_train': Ntrain, 
+               'N_test': Ntest,
+               'seq_len': seq_len, 
+               'input': input_features,
+               'output': output_features, 
+               'normalize': normalize,
+               'verbose': False, 'num_datasets':num_datasets,
+               'random_start':random_start,
+               'overlap': overlap}
+     X_train, y_train, X_test, y_test = load_split_data(folder_path=folder_path, **params)
      
-     ## Prepare and split data
-     # train test split
-     train_features, X_test_arr, train_output, y_test_arr = \
-          train_test_split(X, y, test_size=Ntest_fraction, shuffle=False)
-     # Now split train data into train and val. data
+     
+     # Set all but the first true value to 0 in each sequence
+     Noutput_features = y_train.shape[-1]
+     X_train[:, 1:, -Noutput_features:] = 0
+     X_test[:, 1:, -Noutput_features:] = 0
+     
+     # Include only the last true value in each sequence
+     y_train = y_train[:,-1,:]#.reshape(y_train.shape[0], - 1)
+     y_test = y_test[:,-1,:]#.reshape(y_test.shape[0], - 1)
+     
+     print('Xtrain', X_train.shape, 'ytrain', y_train.shape)
+     print('Xtest', X_test.shape, 'ytest', y_test.shape)
+
+     output_size = y_train.shape[-1]
+     Noutput_features = output_size
+     Nfeatures = X_train.shape[-1]
+
+
+     ## Prepare and split train data into train and val. data
      X_train_arr, X_val_arr, y_train_arr, y_val_arr = \
-          train_test_split(train_features, train_output, \
-                                                       test_size=Ntest_fraction, shuffle=False)
-     print(train_features.shape, X_test_arr.shape, train_output.shape, y_test_arr.shape)
+          train_test_split(X_train, y_train, \
+                                                       test_size=Nval_fraction, shuffle=False)
+    
+
      print(X_train_arr.shape, X_val_arr.shape, y_train_arr.shape, y_val_arr.shape)
+
      # convert to torch tensors
      X_train = torch.from_numpy(X_train_arr).float()
      y_train = torch.from_numpy(y_train_arr).float()
      X_val = torch.from_numpy(X_val_arr).float()
      y_val = torch.from_numpy(y_val_arr).float()
-     X_test = torch.from_numpy(X_test_arr).float()
-     y_test = torch.from_numpy(y_test_arr).float()
+     X_test = torch.from_numpy(X_test).float()
+     y_test = torch.from_numpy(y_test).float()
 
      # dataset
      train_dataset = torch.utils.data.TensorDataset(X_train, y_train)
@@ -224,6 +213,29 @@ def main():
      val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
      test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
+
+
+     # setting device on GPU if available, else CPU
+     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+     print('Using device:', device)
+
+     #Additional Info when using cuda
+     if device.type == 'cuda':
+          print(torch.cuda.get_device_name(0))
+          print('Memory Usage:')
+          print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
+          print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB')
+
+
+     net = Net(input_size=Nfeatures, output_size = output_size,hidden_size=hidden_size,\
+                num_layers=num_layers,  seq_len=seq_len, dropout=dropout_layer)
+     # mount model to device
+     net.to(device)
+     # number of params
+     num_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
+     print('Number of parameters: %d' % num_params)
+     
+     
      # optimizer
      optimizer = optim.Adam(net.parameters(), lr=learning_rate)
      t_start = time.time()
@@ -257,21 +269,17 @@ def main():
 
      t_end = time.time()
      print("Training time: ", t_end - t_start)
- 
+
+     
      y_pred = []
      if use_truth_input:
           with torch.no_grad():
                for i, (inputs, labels) in enumerate(test_loader):
                     inputs, labels = inputs.to(device), labels.to(device)
-     
                     if i > 0:
-                         if inputs.shape[0] != y_pred_tensor.shape[0]:
-                              break
-                         else:
-                              inputs[:,:,-Noutput_features:] = 0
-                              inputs[:,0,-Noutput_features:] = \
-                                   y_pred_tensor.reshape(y_pred_tensor.shape[0], seq_len, Noutput_features)[:,0,:]
-                              #inputs[:,:,-Noutput_features:] = y_pred_tensor.reshape(y_pred_tensor.shape[0], seq_len, Noutput_features)
+                               # copy last prediction to input
+                              inputs[:,0,-Noutput_features:] = y_pred_tensor[0]
+
                     outputs = net(inputs)
                     # copy to cpu and store prediction
                     outputs_cpu = torch.Tensor.cpu(outputs)
@@ -289,16 +297,14 @@ def main():
                     y_pred.append(outputs_cpu.numpy())
                     y_pred_tensor = outputs
      
-     y_pred = np.array(y_pred)
-     # reshape from (Nbatches, BatchSize, seq_len * Noutput features) to (Npoints = Nbatches * Batchsize, seq_len * Noutput_features)
-     y_pred = y_pred.reshape(-1, seq_len * Noutput_features)
-     # only plot the last prediction for each sequence
-     y_pred = y_pred[:, -Noutput_features:]
 
+
+     y_pred = np.array(y_pred)
+     y_pred = y_pred.reshape(-1, Noutput_features)
+ 
      # Include only as many test points as is divisible by batch size
-     q_gts = y_test_arr[:y_pred.shape[0]]
-     # Only plot last true value for each sequence
-     q_gts = q_gts[:,-Noutput_features:]
+     q_gts = y_test.reshape(-1, Noutput_features)
+     q_gts = q_gts[:len(y_pred)]
 
      q_preds = y_pred
      xs = np.arange(len(q_gts))
@@ -307,6 +313,7 @@ def main():
      ncols = 3 if Noutput_features == 3 else 2
      fig, ax = plt.subplots(nrows=nrows,ncols=ncols)
      ax = ax.flatten()
+
      for i, axx in enumerate(ax):
           try:
                axx.plot(xs, q_gts[:,i], label = 'GT', color='green',)
@@ -314,8 +321,8 @@ def main():
                axx.legend()
           except:
                break
+  
      plt.show()
-
 
 if __name__ == '__main__':
     main()
