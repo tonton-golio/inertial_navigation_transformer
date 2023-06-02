@@ -21,9 +21,8 @@ The quaternion update is implemented analyically in `utils.Theta(angular_velocit
 - [] this still needs testing on alternative dataset, or entirely unseen data. 
 - [] optimize parameters (network and hyper); number of layers, widths, learning rate, batch size, number of timesteps between truths, etc.
 - [] include magnetometer and/or accelerometer data.
-- [] implement RNN.
-- [] implement LSTM.
-- [] implement transformer network.
+- [] implement GRU.
+- [] implement transformer network. You can use pred_ori_lstm (and replace the lstm model with a transformer) as a first attempt
 - [] Include filtered features (from Adrian's filters) to see if predictions improve
 
 ## Body frame to world frame
