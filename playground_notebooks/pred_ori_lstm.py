@@ -102,22 +102,49 @@ class Net(nn.Module):
                x = self.linear2(x)
                return x
 
+## Doesn't work; becomes nan with backpropagation
+class FourVectorLoss(nn.Module):
+    def __init__(self):
+        super(FourVectorLoss, self).__init__()
+
+    def forward(self, q1, q2):
+        batch_size = q1.shape[0]
+        loss = 0
+
+        Q1 = torch.Tensor.cpu(q1)
+        Q2 = torch.Tensor.cpu(q2)
+
+        dot_prod_arr = torch.sum(Q1 * Q2, dim = 1)
+        norm_prod_arr = torch.norm(Q1, dim = 1) * torch.norm(Q2, dim = 1)
+        norm_prod_arr[norm_prod_arr == 0] = 1e-8  # Avoid division by zero
+        cos_similarity = torch.abs(dot_prod_arr / norm_prod_arr)
+        loss = torch.arccos(cos_similarity).sum()
+
+        return loss / batch_size
 
 
+     
 
 ### MAIN ---------------------------------------------------------------------------------------
+
+## TODO
+# get loss function to work
+# incorporate Adrians filters
+# try to get good results w/wout filters, rv and game_rv
+
+
 
 def main():
     ### Implement vanilla LSTM
     ## Set central parameters
      # Set how many observations to combine into one datapoint
-     Ntrain = 50_000
-     Ntest = 1500
-     num_datasets = 10
+     Ntrain = 75_000
+     Ntest = 25_000
+     num_datasets = 5
      random_start = True
      overlap = 1
      # set sequence length
-     seq_len = 5
+     seq_len = 2
      # Set whether to include acceleration and magnetic data when training 
      include_acc = True
      include_lin_acc = False
@@ -126,18 +153,25 @@ def main():
      # set whether to include truth data when training. 
      # ... and to include the previous test prediction as the input when testing net batch
      use_truth_input = True
+     include_filtered_features = True
+     include_madgwick = True
+     include_mahony = True
+     include_EKF = True
+     # set whether to include rv and game rv 
+     include_rv = True
+     include_game_rv = True
 
      learning_rate = 0.0003
      # Set loss function
      criterion = nn.L1Loss()
      # set n_epochs
-     num_epochs = 100
-     # set size of hidden layers
-     hidden_size = 80
+
+     num_epochs = 100   # set size of hidden layers
+     hidden_size = 120
      # set batch size
-     batch_size = 128
+     batch_size = 64
      # set no. of layers in LSTM
-     num_layers = 4
+     num_layers = 5
      # set the dropout layer strength
      dropout_layer = 0.1
 
@@ -145,7 +179,7 @@ def main():
      # Decide which fraction of the training data should be used for validation
      Nval_fraction = .2
 
-     
+
      output_features = ['pose/tango_ori']
      input_features = ['synced/gyro']
      if include_acc:
@@ -154,6 +188,10 @@ def main():
           input_features.append('synced/linacce')
      if include_mag:
           input_features.append('synced/magnet')
+     if include_rv: 
+          input_features.append('synced/rv')
+     if include_game_rv:
+          input_features.append('synced/game_rv')
      if use_truth_input:
           input_features.append(output_features[0])
      
@@ -170,6 +208,99 @@ def main():
      X_train, y_train, X_test, y_test = load_split_data(folder_path=folder_path, **params)
      
      
+     if include_filtered_features:
+          Ntrain_sequences = X_train.shape[0]
+        
+          assert(include_mag is True & (include_acc is True if include_lin_acc is False else False))
+          assert(input_features[0] == 'synced/gyro')
+          assert(input_features[1] == 'synced/acce' if include_acc else 'synced/linacce')
+          assert(input_features[2] == 'synced/magnet')
+     
+          gyro_idx = np.arange(3)
+          acc_idx = np.arange(3,6)
+          mag_idx = np.arange(6,9)
+      
+
+          X = np.vstack((X_train, X_test))
+          q_0 = y_train[0, 0, :]
+
+          # Extract rows, reshape to (Npoints, Nfeatures) 
+          X_gyro = X[:, :, gyro_idx].reshape(-1, 3)
+          X_acc = X[:, :, acc_idx].reshape(-1, 3)
+          X_mag = X[:, :, mag_idx].reshape(-1, 3)
+          dt = 1/200
+
+          print(X_gyro.shape, X_acc.shape, X_mag.shape)
+
+          if include_madgwick:
+               gain = 1.04299724
+               madgwick_filter = Madgwick(gyr = X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, gain=gain)
+               Q_1 = madgwick_filter.Q
+               # Add now features to X
+               print(Q_1.shape)
+               print(Q_1.reshape(-1, seq_len, 4).shape)
+               X = np.concatenate((Q_1.reshape(-1, seq_len, 4), X), axis=-1)
+
+          if include_mahony:
+               k_P = 0.8311948880973625
+               k_I = 0.13119070597985183
+               mahony_filter = Mahony(gyr = X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, k_P=k_P, k_I=k_I)
+               Q_2 = mahony_filter.Q
+               X = np.concatenate((Q_2.reshape(-1, seq_len, 4), X), axis=-1)
+
+          
+          if include_EKF:
+               acc_var = 0.3**2
+               gyro_var = 0.5**2
+               mag_var = 0.8**2
+               ekf = EKF(gyr=X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, noises= [gyro_var, acc_var, mag_var])
+               Q_ekf = ekf.Q
+               X = np.concatenate((Q_ekf.reshape(-1, seq_len, 4), X), axis=-1)
+
+          X_train = X[:Ntrain_sequences, :, :]    
+          X_test = X[Ntrain_sequences:, :, :]
+
+          if 0:
+               for q_0, X in zip([y_train[0, 0, :], y_train[0, 0, :]], [X_train, X_test]):
+                    # Extract rows, reshape to (Npoints, Nfeatures) 
+                    X_gyro = X[:, :, gyro_idx].reshape(-1, 3)
+                    X_acc = X[:, :, acc_idx].reshape(-1, 3)
+                    X_mag = X[:, :, mag_idx].reshape(-1, 3)
+                    dt = 1/200
+     
+                    print(X_gyro.shape, X_acc.shape, X_mag.shape)
+
+                    if include_madgwick:
+                         gain = 1.04299724
+                         madgwick_filter = Madgwick(gyr = X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, gain=gain)
+                         Q_1 = madgwick_filter.Q
+                         # Add now features to X
+                         print(Q_1.shape)
+                         print(Q_1.reshape(-1, seq_len, 4).shape)
+                         X = np.concatenate((Q_1.reshape(-1, seq_len, 4), X), axis=-1)
+
+                    if include_mahony:
+                         k_P = 0.8311948880973625
+                         k_I = 0.13119070597985183
+                         mahony_filter = Mahony(gyr = X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, k_P=k_P, k_I=k_I)
+                         Q_2 = mahony_filter.Q
+                         X = np.concatenate((Q_2.reshape(-1, seq_len, 4), X), axis=-1)
+
+                    
+                    if include_EKF:
+                         acc_var = 0.3**2
+                         gyro_var = 0.5**2
+                         mag_var = 0.8**2
+                         ekf = EKF(gyr=X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, noises= [gyro_var, acc_var, mag_var])
+                         Q_ekf = ekf.Q
+                         X = np.concatenate((Q_ekf.reshape(-1, seq_len, 4), X), axis=-1)
+
+          print("Shape of Xtrain, Xtest after including filtered features", X_train.shape, X_test.shape)
+
+
+
+
+
      # Set all but the first true value to 0 in each sequence
      Noutput_features = y_train.shape[-1]
      X_train[:, 1:, -Noutput_features:] = 0
@@ -248,6 +379,7 @@ def main():
                inputs, labels = inputs.to(device), labels.to(device)
                optimizer.zero_grad() 
                outputs = net(inputs)
+               
                loss = criterion(outputs, labels)
                loss.backward()
                optimizer.step()
@@ -262,6 +394,7 @@ def main():
                for inputs, labels in val_loader:
                     inputs, labels = inputs.to(device), labels.to(device)
                     outputs = net(inputs)
+                   
                     loss = criterion(outputs, labels)
                     running_loss += loss.item()
                     n_minibatches += 1
@@ -276,11 +409,12 @@ def main():
           with torch.no_grad():
                for i, (inputs, labels) in enumerate(test_loader):
                     inputs, labels = inputs.to(device), labels.to(device)
-                    if i > 0:
+                    if i > 10:
                                # copy last prediction to input
                               inputs[:,0,-Noutput_features:] = y_pred_tensor[0]
 
                     outputs = net(inputs)
+                  
                     # copy to cpu and store prediction
                     outputs_cpu = torch.Tensor.cpu(outputs)
                     y_pred.append(outputs_cpu.numpy())
@@ -289,9 +423,8 @@ def main():
           with torch.no_grad():
                for i, (inputs, labels) in enumerate(test_loader):
                     inputs, labels = inputs.to(device), labels.to(device)
-                    if inputs.shape[0] < batch_size:
-                         break
-                    outputs = net(inputs)
+            
+                    outputs = net(inputs)    
                     # copy to cpu and store prediction
                     outputs_cpu = torch.Tensor.cpu(outputs)
                     y_pred.append(outputs_cpu.numpy())
