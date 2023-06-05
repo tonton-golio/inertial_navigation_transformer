@@ -130,6 +130,7 @@ def main():
      
 
      input_features = ['synced/gyro']
+     output_features = ['pose/tango_ori']
      if include_acc:
           input_features.append('synced/acce')
      if include_mag:
@@ -137,10 +138,10 @@ def main():
      if include_lin_acc:
           input_features.append('synced/linacce')
      if use_truth_input:
-          input_features.append('pose/tango_ori')
+          input_features.append(output_features[0])
 
   
-     output_features = ['pose/tango_ori']
+     
 
 
      params = {'N_train': Ntrain, 

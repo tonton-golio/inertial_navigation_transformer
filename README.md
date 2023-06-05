@@ -21,9 +21,9 @@ The quaternion update is implemented analyically in `utils.Theta(angular_velocit
 - [] this still needs testing on alternative dataset, or entirely unseen data. 
 - [] optimize parameters (network and hyper); number of layers, widths, learning rate, batch size, number of timesteps between truths, etc.
 - [] include magnetometer and/or accelerometer data.
-- [] implement RNN.
-- [] implement LSTM.
-- [] implement transformer network.
+- [] implement GRU.
+- [] implement transformer network. You can use pred_ori_lstm (and replace the lstm model with a transformer) as a first attempt
+- [] Include filtered features (from Adrian's filters) to see if predictions improve
 
 ## Body frame to world frame
 An initial orientation is required to interpret the measurements from the IMU. The world frame is defined by the north, east and down directions, obtained by the direction of the magnetic field and the direction of gravity (and their cross product).
@@ -39,7 +39,8 @@ The acceleration is rotated into the world frame, and integrated twice to obtain
 
 **Open tasks on acc2pos**
 - [] implement simple integration of acceleration to position, and insert result here
-- [] implement neural network which takes `synced/acce` and `synced/magnet` and true orientation and predicts the position.
+- [] implement neural network which takes `synced/acce` and `synced/magnet` and true orientation and predicts the position. 
+- [] implement lstm, gru or transformer to predict positions. You can modify pred_ori_lstm to output predictions as a first attempt
 
 ## Data
 The data is obtained from ... Below is a table of the data contents.
@@ -84,7 +85,8 @@ The data is obtained from ... Below is a table of the data contents.
 | --- | --- | --- | --- | --- |
 | 05-15 | clone github + open data + watch introductory youtube videos | 12-05  | Done | |
 | 25-05 | Go through and optimize Anton's NN | 28-05 |Done | |
-| 28-05 | Implement LSTM | | | |
+| 28-05 | Implement LSTM | 29-05 | Done | |
+| 01-06 | Include filtered features to see if predictions imrpove | |||
 
 ### Chris
 | Date added| Task | date completed  | Status | Notes |

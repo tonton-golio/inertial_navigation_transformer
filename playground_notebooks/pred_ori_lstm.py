@@ -102,19 +102,49 @@ class Net(nn.Module):
                x = self.linear2(x)
                return x
 
+## Doesn't work; becomes nan with backpropagation
+class FourVectorLoss(nn.Module):
+    def __init__(self):
+        super(FourVectorLoss, self).__init__()
+
+    def forward(self, q1, q2):
+        batch_size = q1.shape[0]
+        loss = 0
+
+        Q1 = torch.Tensor.cpu(q1)
+        Q2 = torch.Tensor.cpu(q2)
+
+        dot_prod_arr = torch.sum(Q1 * Q2, dim = 1)
+        norm_prod_arr = torch.norm(Q1, dim = 1) * torch.norm(Q2, dim = 1)
+        norm_prod_arr[norm_prod_arr == 0] = 1e-8  # Avoid division by zero
+        cos_similarity = torch.abs(dot_prod_arr / norm_prod_arr)
+        loss = torch.arccos(cos_similarity).sum()
+
+        return loss / batch_size
 
 
+     
 
 ### MAIN ---------------------------------------------------------------------------------------
+
+## TODO
+# get loss function to work
+# incorporate Adrians filters
+# try to get good results w/wout filters, rv and game_rv
+
+
 
 def main():
     ### Implement vanilla LSTM
     ## Set central parameters
      # Set how many observations to combine into one datapoint
-     Ntrain = 50_000
-     Ntest = 1500
+     Ntrain = 75_000
+     Ntest = 25_000
+     num_datasets = 5
+     random_start = True
+     overlap = 1
      # set sequence length
-     seq_len = 5
+     seq_len = 2
      # Set whether to include acceleration and magnetic data when training 
      include_acc = True
      include_lin_acc = False
@@ -123,18 +153,25 @@ def main():
      # set whether to include truth data when training. 
      # ... and to include the previous test prediction as the input when testing net batch
      use_truth_input = True
+     include_filtered_features = True
+     include_madgwick = True
+     include_mahony = True
+     include_EKF = True
+     # set whether to include rv and game rv 
+     include_rv = True
+     include_game_rv = True
 
      learning_rate = 0.0003
      # Set loss function
      criterion = nn.L1Loss()
      # set n_epochs
-     num_epochs = 5
-     # set size of hidden layers
-     hidden_size = 100
+
+     num_epochs = 100   # set size of hidden layers
+     hidden_size = 120
      # set batch size
-     batch_size = 128
+     batch_size = 64
      # set no. of layers in LSTM
-     num_layers = 3
+     num_layers = 5
      # set the dropout layer strength
      dropout_layer = 0.1
 
@@ -142,7 +179,8 @@ def main():
      # Decide which fraction of the training data should be used for validation
      Nval_fraction = .2
 
-     
+
+     output_features = ['pose/tango_ori']
      input_features = ['synced/gyro']
      if include_acc:
           input_features.append('synced/acce')
@@ -150,69 +188,151 @@ def main():
           input_features.append('synced/linacce')
      if include_mag:
           input_features.append('synced/magnet')
+     if include_rv: 
+          input_features.append('synced/rv')
+     if include_game_rv:
+          input_features.append('synced/game_rv')
      if use_truth_input:
-          input_features.append('pose/tango_ori')
-  
-     output_features = ['pose/tango_ori']
-     params ={'Ntrain': Ntrain, 'Nval': Ntest, 'seq_len': seq_len,\
-               'input': input_features, 'output': output_features}
-     if normalize:
-          params.update({'normalize': True})
-
-     X, y = load_split_data(folder_path=folder_path, **params)
-     Noutput_features = y.shape[-1] # length of output data
-
-     # Discard last point of X and first point of y
-     X[:,1:,-Noutput_features:] = 0
-     y = y
-
-     #reshape y
-     y = y.reshape(y.shape[0], - 1)
-     Nfeatures = X.shape[-1]
-
+          input_features.append(output_features[0])
      
-     # setting device on GPU if available, else CPU
-     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-     print('Using device:', device)
 
-     #Additional Info when using cuda
-     if device.type == 'cuda':
-          print(torch.cuda.get_device_name(0))
-          print('Memory Usage:')
-          print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
-          print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB')
-
-     # initialize model
-     output_size = torch.from_numpy(np.array([seq_len, Noutput_features])).int()
-     output_size = torch.tensor([seq_len, Noutput_features])
-     output_size = seq_len * Noutput_features
-
-
-     net = Net(input_size=Nfeatures, output_size = output_size,hidden_size=hidden_size,\
-                num_layers=num_layers,  seq_len=seq_len, dropout=dropout_layer)
-     # mount model to device
-     net.to(device)
-     # number of params
-     num_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
-     print('Number of parameters: %d' % num_params)
+     params = {'N_train': Ntrain, 
+               'N_test': Ntest,
+               'seq_len': seq_len, 
+               'input': input_features,
+               'output': output_features, 
+               'normalize': normalize,
+               'verbose': False, 'num_datasets':num_datasets,
+               'random_start':random_start,
+               'overlap': overlap}
+     X_train, y_train, X_test, y_test = load_split_data(folder_path=folder_path, **params)
      
-     ## Prepare and split data
-     # train test split
-     train_features, X_test_arr, train_output, y_test_arr = \
-          train_test_split(X, y, test_size=Ntest_fraction, shuffle=False)
-     # Now split train data into train and val. data
+     
+     if include_filtered_features:
+          Ntrain_sequences = X_train.shape[0]
+        
+          assert(include_mag is True & (include_acc is True if include_lin_acc is False else False))
+          assert(input_features[0] == 'synced/gyro')
+          assert(input_features[1] == 'synced/acce' if include_acc else 'synced/linacce')
+          assert(input_features[2] == 'synced/magnet')
+     
+          gyro_idx = np.arange(3)
+          acc_idx = np.arange(3,6)
+          mag_idx = np.arange(6,9)
+      
+
+          X = np.vstack((X_train, X_test))
+          q_0 = y_train[0, 0, :]
+
+          # Extract rows, reshape to (Npoints, Nfeatures) 
+          X_gyro = X[:, :, gyro_idx].reshape(-1, 3)
+          X_acc = X[:, :, acc_idx].reshape(-1, 3)
+          X_mag = X[:, :, mag_idx].reshape(-1, 3)
+          dt = 1/200
+
+          print(X_gyro.shape, X_acc.shape, X_mag.shape)
+
+          if include_madgwick:
+               gain = 1.04299724
+               madgwick_filter = Madgwick(gyr = X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, gain=gain)
+               Q_1 = madgwick_filter.Q
+               # Add now features to X
+               print(Q_1.shape)
+               print(Q_1.reshape(-1, seq_len, 4).shape)
+               X = np.concatenate((Q_1.reshape(-1, seq_len, 4), X), axis=-1)
+
+          if include_mahony:
+               k_P = 0.8311948880973625
+               k_I = 0.13119070597985183
+               mahony_filter = Mahony(gyr = X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, k_P=k_P, k_I=k_I)
+               Q_2 = mahony_filter.Q
+               X = np.concatenate((Q_2.reshape(-1, seq_len, 4), X), axis=-1)
+
+          
+          if include_EKF:
+               acc_var = 0.3**2
+               gyro_var = 0.5**2
+               mag_var = 0.8**2
+               ekf = EKF(gyr=X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, noises= [gyro_var, acc_var, mag_var])
+               Q_ekf = ekf.Q
+               X = np.concatenate((Q_ekf.reshape(-1, seq_len, 4), X), axis=-1)
+
+          X_train = X[:Ntrain_sequences, :, :]    
+          X_test = X[Ntrain_sequences:, :, :]
+
+          if 0:
+               for q_0, X in zip([y_train[0, 0, :], y_train[0, 0, :]], [X_train, X_test]):
+                    # Extract rows, reshape to (Npoints, Nfeatures) 
+                    X_gyro = X[:, :, gyro_idx].reshape(-1, 3)
+                    X_acc = X[:, :, acc_idx].reshape(-1, 3)
+                    X_mag = X[:, :, mag_idx].reshape(-1, 3)
+                    dt = 1/200
+     
+                    print(X_gyro.shape, X_acc.shape, X_mag.shape)
+
+                    if include_madgwick:
+                         gain = 1.04299724
+                         madgwick_filter = Madgwick(gyr = X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, gain=gain)
+                         Q_1 = madgwick_filter.Q
+                         # Add now features to X
+                         print(Q_1.shape)
+                         print(Q_1.reshape(-1, seq_len, 4).shape)
+                         X = np.concatenate((Q_1.reshape(-1, seq_len, 4), X), axis=-1)
+
+                    if include_mahony:
+                         k_P = 0.8311948880973625
+                         k_I = 0.13119070597985183
+                         mahony_filter = Mahony(gyr = X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, k_P=k_P, k_I=k_I)
+                         Q_2 = mahony_filter.Q
+                         X = np.concatenate((Q_2.reshape(-1, seq_len, 4), X), axis=-1)
+
+                    
+                    if include_EKF:
+                         acc_var = 0.3**2
+                         gyro_var = 0.5**2
+                         mag_var = 0.8**2
+                         ekf = EKF(gyr=X_gyro, acc = X_acc, mag=X_mag, dt = dt, q0=q_0, noises= [gyro_var, acc_var, mag_var])
+                         Q_ekf = ekf.Q
+                         X = np.concatenate((Q_ekf.reshape(-1, seq_len, 4), X), axis=-1)
+
+          print("Shape of Xtrain, Xtest after including filtered features", X_train.shape, X_test.shape)
+
+
+
+
+
+     # Set all but the first true value to 0 in each sequence
+     Noutput_features = y_train.shape[-1]
+     X_train[:, 1:, -Noutput_features:] = 0
+     X_test[:, 1:, -Noutput_features:] = 0
+     
+     # Include only the last true value in each sequence
+     y_train = y_train[:,-1,:]#.reshape(y_train.shape[0], - 1)
+     y_test = y_test[:,-1,:]#.reshape(y_test.shape[0], - 1)
+     
+     print('Xtrain', X_train.shape, 'ytrain', y_train.shape)
+     print('Xtest', X_test.shape, 'ytest', y_test.shape)
+
+     output_size = y_train.shape[-1]
+     Noutput_features = output_size
+     Nfeatures = X_train.shape[-1]
+
+
+     ## Prepare and split train data into train and val. data
      X_train_arr, X_val_arr, y_train_arr, y_val_arr = \
-          train_test_split(train_features, train_output, \
-                                                       test_size=Ntest_fraction, shuffle=False)
-     print(train_features.shape, X_test_arr.shape, train_output.shape, y_test_arr.shape)
+          train_test_split(X_train, y_train, \
+                                                       test_size=Nval_fraction, shuffle=False)
+    
+
      print(X_train_arr.shape, X_val_arr.shape, y_train_arr.shape, y_val_arr.shape)
+
      # convert to torch tensors
      X_train = torch.from_numpy(X_train_arr).float()
      y_train = torch.from_numpy(y_train_arr).float()
      X_val = torch.from_numpy(X_val_arr).float()
      y_val = torch.from_numpy(y_val_arr).float()
-     X_test = torch.from_numpy(X_test_arr).float()
-     y_test = torch.from_numpy(y_test_arr).float()
+     X_test = torch.from_numpy(X_test).float()
+     y_test = torch.from_numpy(y_test).float()
 
      # dataset
      train_dataset = torch.utils.data.TensorDataset(X_train, y_train)
@@ -224,6 +344,29 @@ def main():
      val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=True)
      test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1, shuffle=False)
 
+
+
+     # setting device on GPU if available, else CPU
+     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+     print('Using device:', device)
+
+     #Additional Info when using cuda
+     if device.type == 'cuda':
+          print(torch.cuda.get_device_name(0))
+          print('Memory Usage:')
+          print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
+          print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB')
+
+
+     net = Net(input_size=Nfeatures, output_size = output_size,hidden_size=hidden_size,\
+                num_layers=num_layers,  seq_len=seq_len, dropout=dropout_layer)
+     # mount model to device
+     net.to(device)
+     # number of params
+     num_params = sum(p.numel() for p in net.parameters() if p.requires_grad)
+     print('Number of parameters: %d' % num_params)
+     
+     
      # optimizer
      optimizer = optim.Adam(net.parameters(), lr=learning_rate)
      t_start = time.time()
@@ -236,6 +379,7 @@ def main():
                inputs, labels = inputs.to(device), labels.to(device)
                optimizer.zero_grad() 
                outputs = net(inputs)
+               
                loss = criterion(outputs, labels)
                loss.backward()
                optimizer.step()
@@ -250,6 +394,7 @@ def main():
                for inputs, labels in val_loader:
                     inputs, labels = inputs.to(device), labels.to(device)
                     outputs = net(inputs)
+                   
                     loss = criterion(outputs, labels)
                     running_loss += loss.item()
                     n_minibatches += 1
@@ -257,22 +402,19 @@ def main():
 
      t_end = time.time()
      print("Training time: ", t_end - t_start)
- 
+
+     
      y_pred = []
      if use_truth_input:
           with torch.no_grad():
                for i, (inputs, labels) in enumerate(test_loader):
                     inputs, labels = inputs.to(device), labels.to(device)
-     
-                    if i > 0:
-                         if inputs.shape[0] != y_pred_tensor.shape[0]:
-                              break
-                         else:
-                              inputs[:,:,-Noutput_features:] = 0
-                              inputs[:,0,-Noutput_features:] = \
-                                   y_pred_tensor.reshape(y_pred_tensor.shape[0], seq_len, Noutput_features)[:,0,:]
-                              #inputs[:,:,-Noutput_features:] = y_pred_tensor.reshape(y_pred_tensor.shape[0], seq_len, Noutput_features)
+                    if i > 10:
+                               # copy last prediction to input
+                              inputs[:,0,-Noutput_features:] = y_pred_tensor[0]
+
                     outputs = net(inputs)
+                  
                     # copy to cpu and store prediction
                     outputs_cpu = torch.Tensor.cpu(outputs)
                     y_pred.append(outputs_cpu.numpy())
@@ -281,24 +423,21 @@ def main():
           with torch.no_grad():
                for i, (inputs, labels) in enumerate(test_loader):
                     inputs, labels = inputs.to(device), labels.to(device)
-                    if inputs.shape[0] < batch_size:
-                         break
-                    outputs = net(inputs)
+            
+                    outputs = net(inputs)    
                     # copy to cpu and store prediction
                     outputs_cpu = torch.Tensor.cpu(outputs)
                     y_pred.append(outputs_cpu.numpy())
                     y_pred_tensor = outputs
      
-     y_pred = np.array(y_pred)
-     # reshape from (Nbatches, BatchSize, seq_len * Noutput features) to (Npoints = Nbatches * Batchsize, seq_len * Noutput_features)
-     y_pred = y_pred.reshape(-1, seq_len * Noutput_features)
-     # only plot the last prediction for each sequence
-     y_pred = y_pred[:, -Noutput_features:]
 
+
+     y_pred = np.array(y_pred)
+     y_pred = y_pred.reshape(-1, Noutput_features)
+ 
      # Include only as many test points as is divisible by batch size
-     q_gts = y_test_arr[:y_pred.shape[0]]
-     # Only plot last true value for each sequence
-     q_gts = q_gts[:,-Noutput_features:]
+     q_gts = y_test.reshape(-1, Noutput_features)
+     q_gts = q_gts[:len(y_pred)]
 
      q_preds = y_pred
      xs = np.arange(len(q_gts))
@@ -307,6 +446,7 @@ def main():
      ncols = 3 if Noutput_features == 3 else 2
      fig, ax = plt.subplots(nrows=nrows,ncols=ncols)
      ax = ax.flatten()
+
      for i, axx in enumerate(ax):
           try:
                axx.plot(xs, q_gts[:,i], label = 'GT', color='green',)
@@ -314,8 +454,8 @@ def main():
                axx.legend()
           except:
                break
+  
      plt.show()
-
 
 if __name__ == '__main__':
     main()
