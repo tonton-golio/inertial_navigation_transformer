@@ -133,45 +133,44 @@ class FourVectorLoss(nn.Module):
 # try to get good results w/wout filters, rv and game_rv
 
 
-
 def main():
     ### Implement vanilla LSTM
     ## Set central parameters
      # Set how many observations to combine into one datapoint
-     Ntrain = 75_000
-     Ntest = 25_000
-     num_datasets = 5
+     Ntrain = 30_000
+     Ntest = 5_000
+     num_datasets = 3
      random_start = True
      overlap = 1
      # set sequence length
-     seq_len = 2
+     seq_len = 5
      # Set whether to include acceleration and magnetic data when training 
-     include_acc = True
-     include_lin_acc = False
+     include_acc = False
+     include_lin_acc = True
      include_mag = True
      normalize = True
      # set whether to include truth data when training. 
      # ... and to include the previous test prediction as the input when testing net batch
      use_truth_input = True
-     include_filtered_features = True
+     include_filtered_features = False
      include_madgwick = True
      include_mahony = True
      include_EKF = True
      # set whether to include rv and game rv 
-     include_rv = True
-     include_game_rv = True
+     include_rv = False
+     include_game_rv = False
 
-     learning_rate = 0.0003
+     learning_rate = 0.0001
      # Set loss function
      criterion = nn.L1Loss()
      # set n_epochs
 
-     num_epochs = 100   # set size of hidden layers
-     hidden_size = 120
+     num_epochs = 100    # set size of hidden layers
+     hidden_size = 100
      # set batch size
      batch_size = 64
      # set no. of layers in LSTM
-     num_layers = 5
+     num_layers = 3
      # set the dropout layer strength
      dropout_layer = 0.1
 
@@ -309,7 +308,7 @@ def main():
      # Include only the last true value in each sequence
      y_train = y_train[:,-1,:]#.reshape(y_train.shape[0], - 1)
      y_test = y_test[:,-1,:]#.reshape(y_test.shape[0], - 1)
-     
+
      print('Xtrain', X_train.shape, 'ytrain', y_train.shape)
      print('Xtest', X_test.shape, 'ytest', y_test.shape)
 
@@ -456,6 +455,9 @@ def main():
                break
   
      plt.show()
+
+
+
 
 if __name__ == '__main__':
     main()
