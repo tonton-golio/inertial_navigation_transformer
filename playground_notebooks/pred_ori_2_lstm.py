@@ -93,11 +93,11 @@ def main():
     ### Implement vanilla LSTM
     ## Set central parameters
      # Set how many observations to combine into one datapoint
-     Ntrain = 60_000
-     Ntest = 2_000
-     num_datasets = 5
+     Ntrain = 100_000
+     Ntest = 5_000
+     num_datasets = 50
      # set sequence length
-     seq_len = 25
+     seq_len = 10
      random_start = True
      # Set whether to include acceleration and magnetic data when training 
      include_acc = False
@@ -108,18 +108,19 @@ def main():
      # set whether to include truth data when training. 
      # ... and to include the previous test prediction as the input when testing net batch
      use_truth_input = True
+     include_theta = True
 
-     learning_rate = 0.0005
+     learning_rate = 0.0001
      # Set loss function
      criterion = nn.L1Loss()
      # set n_epochs
-     num_epochs = 5
+     num_epochs = 50
      # set size of hidden layers
-     hidden_size = 100
+     hidden_size = 132
      # set batch size
-     batch_size = 256#seq_len * hidden_size
+     batch_size = 128#seq_len * hidden_size
      # set no. of layers in LSTM
-     num_layers = 8
+     num_layers = 6
 
 
      Ntest_fraction = Ntest / Ntrain
@@ -148,20 +149,22 @@ def main():
                'input': input_features,
                'output': output_features, 
                'normalize': normalize,
-               'verbose': False, 'num_datasets':num_datasets,
+               'verbose': False, 
+               'num_datasets':num_datasets,
                'random_start':random_start,
-               'overlap': overlap}
-     X_train, y_train, X_test, y_test = load_split_data(folder_path=folder_path, **params)
-     
+               'overlap': overlap,
+               'include_theta': include_theta,}
+     X_train, y_train, X_test, y_test, col_locations = load_split_data(folder_path=folder_path, **params)
+     print(col_locations)
      Noutput_features = y_train.shape[2]
      # Discard last point of X and first point of y
      print('X', X_train.shape, 'y', y_train.shape)
-     X_train[:, 1:, -Noutput_features:] = 0
-     X_test[:, 1:, -Noutput_features:] = 0
+     X_train[:, 1:, col_locations['input']['pose/tango_ori'][0]:col_locations['input']['pose/tango_ori'][1]] = 0
+     X_test[:, 1:, col_locations['input']['pose/tango_ori'][0]:col_locations['input']['pose/tango_ori'][1]] = 0
      
      #reshape y
-     y_train = y_train[:,-1,:]#.reshape(y_train.shape[0], - 1)
-     y_test = y_test[:,-1,:]#.reshape(y_test.shape[0], - 1)
+     y_train = y_train.reshape(y_train.shape[0], - 1) #y_train[:,-1,:]
+     #y_test = y_test.reshape(y_test.shape[0], - 1) #y_test[:,-1,:]
      
      Nfeatures = X_train.shape[-1]
 
@@ -170,25 +173,73 @@ def main():
                super(LSTM, self).__init__()
                self.num_layers = num_layers
                self.hidden_size = hidden_size
+               self.relu = nn.ReLU()
 
-
+               # pre
+               self.input_linear = nn.Linear(input_size, input_size*2)
+               self.input_linear2 = nn.Linear(input_size*2, input_size*2)
+               self.input_linear3 = nn.Linear(input_size*2, input_size)
+               
+               # main
                self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, \
                                    num_layers = num_layers, batch_first=True)
-               self.linear = nn.Linear(hidden_size, hidden_size*5)
-               self.linear2 = nn.Linear(hidden_size*5, output_size)
-               self.relu = nn.ReLU()
-               self.flatten = nn.Flatten()
+               self.linear_main = nn.Linear(hidden_size, 16)
+               
+               # post
+               self.linear_post_1 = nn.Linear(36, hidden_size*2)
+
+               self.linear_post_2 = nn.Linear(hidden_size*2, hidden_size*2)
+               self.linear_post_3 = nn.Linear(hidden_size*2, hidden_size)
+               self.linear_post_4 = nn.Linear(hidden_size, output_size)
+               
+
 
           def forward(self, x):
-               x, _ = self.lstm(x)  # Run LSTM and store the hidden layer outputs
-               #print('x', x.shape)
-               x = x[:, -1, :]  # take the last hidden layer
-               #x = self.flatten(x)
-               x = self.linear(x) # a normal dense layer
-               x = self.relu(x)
-               x = self.linear2(x) # a normal dense layer
-               return x
+               # read input
+               gyro = x[:,:,col_locations['input']['synced/gyro'][0]:col_locations['input']['synced/gyro'][1]]
+               mag = x[:,:,col_locations['input']['synced/magnet'][0]:col_locations['input']['synced/magnet'][1]]
+               linacce = x[:,:,col_locations['input']['synced/linacce'][0]:col_locations['input']['synced/linacce'][1]]
+               X_main = torch.cat((gyro, mag, linacce), dim=2)
+               ori_0 = x[:,0,col_locations['input']['pose/tango_ori'][0]:col_locations['input']['pose/tango_ori'][1]]
+               theta = x[:,0,col_locations['input']['theta'][0]:col_locations['input']['theta'][1]]
+               
+               # pre
+               X_main = self.input_linear(X_main)
+               X_main = self.input_linear2(X_main)
+               X_main = self.input_linear3(X_main)
+               
+               # main
+               X_main_lstm, _ = self.lstm(X_main)  # Run LSTM and store the hidden layer outputs
+               X_main_lstm = X_main_lstm[:, -1, :]  # take the last hidden layer
+               X_main_lstm = self.linear_main(X_main_lstm) # a normal dense layer
+               # concatenate gyro_lstm and ori_0
+               #print(gyro_lstm.shape, ori_0.shape)
+               concatted = torch.cat((X_main_lstm, ori_0, theta), dim=1)
+
+               # post
+               concatted = self.linear_post_1(concatted)
+               concatted = self.relu(concatted)
+               concatted = self.linear_post_2(concatted)
+               concatted = self.relu(concatted)
+               concatted = self.linear_post_3(concatted)
+               concatted = self.relu(concatted)
+               concatted = self.linear_post_4(concatted)
+               return concatted
           
+          # set all weight to zero
+          def zero_weights(self):
+               for m in self.modules():
+                    if isinstance(m, nn.Linear):
+                         m.weight.data.zero_()
+                         m.bias.data.zero_()
+                    elif isinstance(m, nn.LSTM):
+                         for name, param in m.named_parameters():
+                              if 'weight_ih' in name:
+                                   torch.nn.init.xavier_uniform_(param.data)
+                              elif 'weight_hh' in name:
+                                   torch.nn.init.orthogonal_(param.data)
+                              elif 'bias' in name:
+                                   param.data.zero_()
 
 
      # setting device on GPU if available, else CPU
@@ -203,10 +254,10 @@ def main():
           print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB')
 
      # initialize model
-     output_size = Noutput_features
+     output_size = Noutput_features * seq_len
 
 
-     net = LSTM(input_size=Nfeatures, output_size = output_size,hidden_size=hidden_size,\
+     net = LSTM(input_size=9, output_size = output_size,hidden_size=hidden_size,\
                 num_layers=num_layers,  seq_len=seq_len)
      # mount model to device
      net.to(device)
@@ -281,9 +332,9 @@ def main():
                          if inputs.shape[0] != y_pred_tensor.shape[0]:
                               break
                          else:
-                              inputs[:,:,-Noutput_features:] = 0
+                              inputs[:,:,col_locations['input']['pose/tango_ori'][0]:col_locations['input']['pose/tango_ori'][1]] = 0
                               #inputs[:,0,-Noutput_features:] = y_pred_tensor.reshape(y_pred_tensor.shape[0], seq_len, Noutput_features)[:,0,:]
-                              inputs[:,0,-Noutput_features:] = y_pred_tensor.reshape(y_pred_tensor.shape[0], Noutput_features)[0]
+                              inputs[:,0,col_locations['input']['pose/tango_ori'][0]:col_locations['input']['pose/tango_ori'][1]] = y_pred_tensor.reshape(y_pred_tensor.shape[0], seq_len, Noutput_features)[0, -1]
 
                     #print(inputs)
                     outputs = net(inputs)
@@ -291,7 +342,7 @@ def main():
                     # copy to cpu and store prediction
                     outputs_cpu = torch.Tensor.cpu(outputs)
                     y_pred.append(outputs_cpu.numpy())
-                    y_pred_tensor = outputs
+                    y_pred_tensor = outputs.reshape(outputs.shape[0], seq_len, Noutput_features)
                     #print(y_pred_tensor.shape)
      else:
           with torch.no_grad():

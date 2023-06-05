@@ -147,18 +147,23 @@ def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_lengt
 
     N_points_per_dir = max(int(N_train/len(train_dirs)), seq_length)
     N_points_per_dir = N_points_per_dir - N_points_per_dir % seq_length
-    n_dirs_to_use = int(N_train/N_points_per_dir)
+    n_dirs_to_use = max([ 1, int(N_train/N_points_per_dir)])
+    print(f'using {n_dirs_to_use} directories for training')
     train_dirs = train_dirs[:n_dirs_to_use+1]
+    print('test dirs:', test_dir, 'train dirs:', train_dirs)
     N_points = N_points_per_dir * len(train_dirs)
     
     print(f'Loading a total of {N_train}, with {N_points_per_dir} points from each of {len(train_dirs)} directories')
+
     for dir in dirs:
+        print(dir)
         file_path = os.path.join(folder_path, dir, 'data.hdf5')
         if verbose: print('Loading file:', file_path)
         with h5py.File(file_path, "r") as hdf_file:
             new_data_dict = load_data(file_path)
-            Nloaded_points += N_points_per_dir
+            
         if dir in test_dir:
+            
             start = 0 if not random_start else np.random.randint(0, 20000)
             for key in columns_X:
                 if data['X-test'][key] is None:
@@ -171,6 +176,8 @@ def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_lengt
                 else:
                     data['y-test'][key] = np.vstack([data['y-test'][key], new_data_dict[key][:N_test]])
         elif dir in train_dirs:
+            Nloaded_points += N_points_per_dir
+            print('dir:', dir, 'is in train_dirs')
             for key in columns_X:
                 if data['X-train'][key] is None:
                     data['X-train'][key] = new_data_dict[key][start:start+N_points_per_dir]
@@ -220,7 +227,7 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
             - normalize: boolean, whether to normalize the data or not.
             - shuffle: boolean, whether to shuffle the data or not.
             - verbose: boolean, whether to print information about the data or not.
-
+            - include_theta: boolean, whether to include the the quat update from analytical
     Returns:
     X_train : numpy array
     y_train : numpy array
@@ -230,7 +237,7 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
 
 
     """
-    params = {'N_train': 1000,'N_test': 100, 'seq_len': 10, 'input': [], 'output': [], 'normalize': False, 'shuffle': True, 'verbose': True, 'num_datasets':1, 'random_start':True}
+    params = {'N_train': 1000,'N_test': 100, 'seq_len': 10, 'input': [], 'output': [], 'normalize': False, 'shuffle': True, 'verbose': True, 'num_datasets':1, 'random_start':True, 'include_theta':False}
     params.update(kwargs)
 
     allowed_columns = [
@@ -256,7 +263,91 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
                             seq_length=params['seq_len'], 
                             num_datasets=params['num_datasets'],
                             random_start=params['random_start'])
-    
+    if params['include_theta']:
+        def Omega(w):
+            """
+            Takes w = [wx, wy, wz] which is the angular velocity readings from the gyroscope
+            Returns the 4x4 matrix Omega(w) which is used to update the quaternion
+            """
+            return np.array([[0    , w[2], -w[1], w[0]],
+                            [-w[2], 0    , w[0] , w[1]],
+                            [w[1] , -w[0], 0    , w[2]],
+                            [-w[0], -w[1], -w[2], 0   ]], dtype=np.float32) * .5
+
+        def u_b(w, dt):
+            """
+            Approximates angle change based on gyroscope reading and timestep size.
+            
+            Parameters:
+            w : np.array
+                Gyro readings.
+            dt : float
+                Time step.
+
+            Returns:
+            u_b : np.array
+                The angle change as obtained by the product of the angular velocity and the timestep.
+            """
+
+            return w * dt
+
+        def Theta(w, dt):
+            """
+            Computes the quaternion update matrix based on gyroscope reading and timestep size.
+            
+            Parameters:
+            ws : np.array
+                Gyroscope readings.
+            dt : float
+                Time step.
+            method : str, optional
+                Integration method. Choose from 'euler', 'trapezoidal', or 'simpson'. 
+                Defaults to 'euler'.
+
+            Returns:
+            Theta : np.array
+                The quaternion update matrix (4x4).
+            """
+            u = u_b(w, dt)
+            w_norm = vec_norm(w)
+            W = Omega(w)
+            u_b_norm = vec_norm(u)
+
+            return np.cos(u_b_norm / 2) * np.eye(4) + (np.sin(u_b_norm / 2) / w_norm) * W
+
+        dt = 1/200
+        thetas_test = []
+        thetas_train = []
+        for i in range(data['X-train']['synced/gyro'].shape[0]):
+            thetas_train.append(Theta(data['X-train']['synced/gyro'][i], dt).flatten())
+
+        for i in range(data['X-test']['synced/gyro'].shape[0]):
+            thetas_test.append(Theta(data['X-test']['synced/gyro'][i], dt).flatten())
+
+        thetas_train = np.array(thetas_train)
+        thetas_test = np.array(thetas_test)
+
+        data['X-train']['theta'] = thetas_train
+        data['X-test']['theta'] = thetas_test
+
+        params['input'].append('theta')
+
+
+
+    col_locations = {
+        'input' : {},
+        'output' : {}
+    }
+    counta_input = 0
+    counta_output = 0
+    for _, col in enumerate(params['input']):
+        width = data['X-train'][col].shape[1]
+        col_locations['input'][col] = (counta_input, counta_input+width)
+        counta_input += width
+    for _, col in enumerate(params['output']):
+        width = data['y-train'][col].shape[1]
+        col_locations['output'][col] = (counta_output, counta_output+width)
+        counta_output += width
     
 
     X_train = np.hstack([data['X-train'][key] for key in params['input']])
@@ -272,7 +363,7 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
     X_train_reshaped, y_train_reshaped = create_sequences(X_train, y_train, seq_length=params['seq_len'])
     X_test_reshaped, y_test_reshaped = create_sequences(X_test, y_test, seq_length=params['seq_len'])
 
-    return X_train_reshaped, y_train_reshaped, X_test_reshaped, y_test_reshaped
+    return X_train_reshaped, y_train_reshaped, X_test_reshaped, y_test_reshaped, col_locations
 
 def split_data(X, y, test_size=0.2):
     indicies = np.arange(X.shape[0])
