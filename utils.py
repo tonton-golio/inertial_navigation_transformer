@@ -1,19 +1,8 @@
 from collections import defaultdict
-from functools import partial
 from sklearn.preprocessing import StandardScaler
 import h5py
 import numpy as np
 import os
-
-import numpy as np
-from sklearn.model_selection import train_test_split
-import matplotlib.pyplot as plt
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torch.utils.data import TensorDataset, DataLoader
 
 def get_all_datasets(hdf_file):
     """
