@@ -59,17 +59,14 @@ else:
     q_0 = ekf_ori[0,:]
 
 
-
 gain = 1.12666016
 madgwick_filter = Madgwick(gyr = gyro, acc = acc, mag=mag, dt = dt, q0=q_0, gain=gain)
 Q_1 = madgwick_filter.Q
-
 
 k_P = 0.5366640716587453
 k_I = 0.4086550384556218
 mahony_filter = Mahony(gyr = gyro, acc = acc, mag=mag, dt = dt, q0=q_0, k_P=k_P, k_I=k_I)
 Q_2 = mahony_filter.Q
-
 
 acc_var = 0.3**2
 gyro_var = 0.5**2
@@ -167,8 +164,8 @@ train_data = train_data.view(train_size, -1, input_size)
 
 def objective(trial):
     epochs = trial.suggest_int("epochs", 10, 200)
-    optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "RMSprop", "SGD", 
-                                                             "Adagrad", "Adadelta", "AdamW", 
+    optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "SGD", 
+                                                             "Adagrad", "AdamW", 
                                                              "Adamax", "ASGD", "NAdam", "RAdam"])
 
     model = LSTMOrientation(input_size, hidden_size, num_layers, output_size)
@@ -245,8 +242,7 @@ def objective(trial):
 # to open the optuna dashboard run the following in a separate terminal
 # $ optuna-dashboard sqlite:///optuna_optimizer.db
 # then click on the http link to access the dashboard in your browser
-study = optuna.create_study(direction="minimize", storage='sqlite:///optuna_optimizer.db',
-                            study_name="optuna_optimizer")
+study = optuna.create_study(direction="minimize", storage='sqlite:///optuna_optimizer.db')
 study.optimize(objective, n_trials=100, n_jobs=5)
 
 print(study.best_trial.params)
