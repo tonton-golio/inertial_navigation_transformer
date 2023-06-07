@@ -148,7 +148,6 @@ input_size = 21
 hidden_size = 128
 num_layers = 3
 output_size = 4
-num_epochs = 100
 seq_len = 5
 
 train_data = torch.cat((gyro, acc, mag, Q_1, Q_2, Q_ekf), dim=1)
@@ -167,6 +166,7 @@ val_labels, train_labels = train_labels[-val_size:], train_labels[:-val_size]
 train_data = train_data.view(train_size, -1, input_size)
 
 def objective(trial):
+    epochs = trial.suggest_int("epochs", 10, 200)
     optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "RMSprop", "SGD", 
                                                              "Adagrad", "Adadelta", "AdamW", 
                                                              "Adamax", "ASGD", "NAdam", "RAdam"])
@@ -179,19 +179,8 @@ def objective(trial):
     if optimizer_name == "Adam":
         learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        betas = (trial.suggest_float("beta_1", 0.8, 1, log=True), 
-                 trial.suggest_float("beta_2", 0.8, 1, log=True))
-        amsgrad = trial.suggest_categorical("amsgrad", [True, False])
         optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, 
-                               betas=betas, amsgrad=amsgrad)
-    elif optimizer_name == "RMSprop":
-        learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-1, log=True)
-        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        momentum = trial.suggest_float("momentum", 1e-6, 1e-1, log=True)
-        centered = trial.suggest_categorical("centered", [True, False])
-        alpha = trial.suggest_float("alpha", 0.8, 1, log=True)
-        optimizer = optim.RMSprop(model.parameters(), lr=learning_rate, weight_decay=weight_decay,
-                                  momentum=momentum, centered=centered, alpha=alpha)
+                               amsgrad=False)
     elif optimizer_name == "SGD":
         learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
@@ -204,51 +193,34 @@ def objective(trial):
         lr_decay = trial.suggest_float("lr_decay", 1e-6, 1e-1, log=True)
         optimizer = optim.Adagrad(model.parameters(), lr=learning_rate, weight_decay=weight_decay, 
                                   lr_decay=lr_decay)
-    elif optimizer_name == "Adadelta":
-        learning_rate = trial.suggest_float("learning_rate", 1e-3, 10, log=True)
-        rho = trial.suggest_float("rho", 1e-2, 1, log=True)
-        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        optimizer = optim.Adadelta(model.parameters(), lr=learning_rate, weight_decay=weight_decay,
-                                   rho=rho)
     elif optimizer_name == "AdamW":
         learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
         amsgrad = trial.suggest_categorical("amsgrad", [True, False])
-        betas = (trial.suggest_float("beta_1", 0.8, 1, log=True),
-                 trial.suggest_float("beta_2", 0.8, 1, log=True))
         optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay,
-                                amsgrad=amsgrad, betas=betas)
+                                amsgrad=amsgrad)
     elif optimizer_name == "Adamax":
         learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        betas = (trial.suggest_float("beta_1", 0.8, 1, log=True),
-                 trial.suggest_float("beta_2", 0.8, 1, log=True))
-        optimizer = optim.Adamax(model.parameters(), lr=learning_rate, weight_decay=weight_decay,
-                                 betas=betas)
+        optimizer = optim.Adamax(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
     elif optimizer_name == "ASGD":
         learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-1, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
         lambd = trial.suggest_float("lambd", 1e-6, 1e-3, log=True)
-        alpha = trial.suggest_float("alpha", 0.5, 1)
         optimizer = optim.ASGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay,
-                               lambd=lambd, alpha=alpha)
+                               lambd=lambd)
     elif optimizer_name == "NAdam":
         learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
         momentum_decay = trial.suggest_float("momentum_decay", 1e-6, 1e-1, log=True)
-        betas = (trial.suggest_float("beta_1", 0.8, 1, log=True),
-                 trial.suggest_float("beta_2", 0.8, 1, log=True))
         optimizer = optim.NAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, 
-                                momentum_decay=momentum_decay, betas=betas)
+                                momentum_decay=momentum_decay)
     elif optimizer_name == "RAdam":
         learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        betas = (trial.suggest_float("beta_1", 0.8, 1, log=True),
-                 trial.suggest_float("beta_2", 0.8, 1, log=True))
-        optimizer = optim.RAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, 
-                                betas=betas)
+        optimizer = optim.RAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-    for epoch in range(num_epochs):
+    for epoch in range(epochs):
         model.train()
         outputs = model(train_data.to(device))
         loss = criterion(outputs, train_labels.to(device))
@@ -273,7 +245,8 @@ def objective(trial):
 # to open the optuna dashboard run the following in a separate terminal
 # $ optuna-dashboard sqlite:///optuna_optimizer.db
 # then click on the http link to access the dashboard in your browser
-study = optuna.create_study(direction="minimize", storage='sqlite:///optuna_optimizer.db')
+study = optuna.create_study(direction="minimize", storage='sqlite:///optuna_optimizer.db',
+                            study_name="optuna_optimizer")
 study.optimize(objective, n_trials=100, n_jobs=5)
 
 print(study.best_trial.params)
