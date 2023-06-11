@@ -175,7 +175,7 @@ def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_lengt
         if dir in test_dir:
             
             start = 0 if not random_start else np.random.randint(0, 20000)
-            if start + N_test > len(new_data_dict['X']):
+            if start + N_test > len(new_data_dict[list(new_data_dict.keys())[0]]):
                 start = 0
             for key in columns_X:
                 if data['X-test'][key] is None:
