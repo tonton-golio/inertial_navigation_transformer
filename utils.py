@@ -154,7 +154,7 @@ def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_lengt
                 labels = df['birch_labels'].values.reshape(-1,1)
 
                 # one hot encode labels
-                onehot_encoder = OneHotEncoder(sparse=False)
+                onehot_encoder = OneHotEncoder()
                 onehot_encoded = onehot_encoder.fit_transform(labels)
                 cluster_labels[dir] = onehot_encoded
 
