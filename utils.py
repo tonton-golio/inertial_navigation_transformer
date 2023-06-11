@@ -127,6 +127,8 @@ def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_lengt
     # get control of directories
     dirs = os.listdir(folder_path)
     if '.DS_Store' in dirs: dirs.remove('.DS_Store') # remove .DS_Store if present
+    dirs = sorted(dirs)
+    #print(dirs)
     test_dir = dirs[:1]
     train_dirs = dirs[1:num_datasets+1]
     print(f'using {test_dir} for testing and the remaining ({len(train_dirs)}) for training')
