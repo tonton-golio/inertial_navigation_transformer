@@ -3,6 +3,9 @@ from sklearn.preprocessing import StandardScaler
 import h5py
 import numpy as np
 import os
+import pandas as pd
+# to import OneHotEncoder: 
+from sklearn.preprocessing import OneHotEncoder
 
 def get_all_datasets(hdf_file):
     """
@@ -101,7 +104,7 @@ def create_sequences(X, y, seq_length, overlap=1):
         y_seq.append(y[i:i+seq_length])
     return np.array(X_seq), np.array(y_seq)
 
-def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_length=1, verbose=False, num_datasets=1, random_start=False):
+def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_length=1, verbose=False, num_datasets=1, random_start=False, include_clusters=False, cluster_labels_path=''):
     """
     Function to load data from multiple HDF5 files.
 
@@ -119,12 +122,7 @@ def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_lengt
     data_dict : dict
         Dictionary with dataset names as keys and numpy arrays as values.
     """
-    data = {
-        'X-train': {key: None for key in columns_X},
-        'y-train': {key: None for key in columns_y},
-        'X-test': {key: None for key in columns_X},
-        'y-test': {key: None for key in columns_y},
-    }
+    
     Nloaded_points = 0
     # get control of directories
     dirs = os.listdir(folder_path)
@@ -144,13 +142,36 @@ def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_lengt
     
     print(f'Loading a total of {N_train}, with {N_points_per_dir} points from each of {len(train_dirs)} directories')
 
+    if include_clusters: 
+        columns_X.append('cluster_labels')
+        cluster_labels = {}
+        for dir in dirs:
+            if dir in test_dir or dir in train_dirs:
+                filepath = f'{cluster_labels_path}/{dir}.csv'
+                df = pd.read_csv(filepath, header=0, index_col=0)
+                labels = df['birch_labels'].values.reshape(-1,1)
+
+                # one hot encode labels
+                onehot_encoder = OneHotEncoder(sparse=False)
+                onehot_encoded = onehot_encoder.fit_transform(labels)
+                cluster_labels[dir] = onehot_encoded
+
+    data = {
+        'X-train': {key: None for key in columns_X},
+        'y-train': {key: None for key in columns_y},
+        'X-test': {key: None for key in columns_X},
+        'y-test': {key: None for key in columns_y},
+    }
     for dir in dirs:
         print(dir)
         file_path = os.path.join(folder_path, dir, 'data.hdf5')
         if verbose: print('Loading file:', file_path)
+        
+
         with h5py.File(file_path, "r") as hdf_file:
             new_data_dict = load_data(file_path)
-            
+            if include_clusters:
+                new_data_dict['cluster_labels'] = cluster_labels[dir]
         if dir in test_dir:
             
             start = 0 if not random_start else np.random.randint(0, 20000)
@@ -226,7 +247,7 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
 
 
     """
-    params = {'N_train': 1000,'N_test': 100, 'seq_len': 10, 'input': [], 'output': [], 'normalize': False, 'shuffle': True, 'verbose': True, 'num_datasets':1, 'random_start':True, 'include_theta':False}
+    params = {'N_train': 1000,'N_test': 100, 'seq_len': 10, 'input': [], 'output': [], 'normalize': False, 'shuffle': True, 'verbose': True, 'num_datasets':1, 'random_start':True, 'include_theta':False, 'include_clusters':False, 'overlap':0, 'cluster_labels_path':'/Users/antongolles/Documents/uni/masters/myMasters/applied_machine_learning/inertial_navigation_transformer/Clustering_labels'}
     params.update(kwargs)
 
     allowed_columns = [
@@ -251,7 +272,9 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
                             verbose=params['verbose'], 
                             seq_length=params['seq_len'], 
                             num_datasets=params['num_datasets'],
-                            random_start=params['random_start'])
+                            random_start=params['random_start'],
+                            include_clusters=params['include_clusters'],
+                            cluster_labels_path=params['cluster_labels_path'],)
     if params['include_theta']:
         def Omega(w):
             """
@@ -349,8 +372,13 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
         X_test, _ = normalize_features(X_test, scaler=scaler)
 
         
-    X_train_reshaped, y_train_reshaped = create_sequences(X_train, y_train, seq_length=params['seq_len'])
-    X_test_reshaped, y_test_reshaped = create_sequences(X_test, y_test, seq_length=params['seq_len'])
+    X_train_reshaped, y_train_reshaped = create_sequences(X_train, y_train, 
+                                                          seq_length=params['seq_len'],
+                                                          overlap=params['overlap'],
+                                                          )
+    X_test_reshaped, y_test_reshaped = create_sequences(X_test, y_test, 
+                                                        seq_length=params['seq_len'], 
+                                                        overlap=params['overlap'])
 
     return X_train_reshaped, y_train_reshaped, X_test_reshaped, y_test_reshaped, col_locations
 
