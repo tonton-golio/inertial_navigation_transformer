@@ -114,31 +114,104 @@ class LSTMOrientation(nn.Module):
         
         return out
     
+class GRUOrientation(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, output_size):
+        super(GRUOrientation, self).__init__()
+        
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        
+        self.gru = nn.GRU(input_size, hidden_size, num_layers, batch_first=True, bidirectional=True)
+        self.fc = nn.Linear(hidden_size * 2, output_size)
+    
+    def forward(self, x):
+        h0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
+        
+        out, _ = self.gru(x, h0)
+        out = self.fc(out[:, -1, :])
+        
+        return out
+    
+class RNNOrientation(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, output_size):
+        super(RNNOrientation, self).__init__()
+        
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        
+        self.rnn = nn.RNN(input_size, hidden_size, num_layers, batch_first=True, bidirectional=True)
+        self.fc = nn.Linear(hidden_size * 2, output_size)
+    
+    def forward(self, x):
+        h0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
+        
+        out, _ = self.rnn(x, h0)
+        out = self.fc(out[:, -1, :])
+        
+        return out
+    
 class CustomLoss(nn.Module):
-    def __init__(self, dist_metric='norm', agg_type='L1'):
+    def __init__(self, dist_metric='phi2', agg_type='L2', normal=False):
         super().__init__()
         self.dist_metric = dist_metric
         self.agg_type = agg_type
+        self.normal = normal
 
     def forward(self, q1, q2):
-        if self.dist_metric == 'qdist1':
-            loss = torch.min(torch.abs(torch.sum(q1 - q2, dim=-1)), torch.abs(torch.sum(q1 + q2, dim=-1)))
-        elif self.dist_metric == 'qdist2':
-            cos_half_angle = torch.abs(torch.sum(q1 * q2, dim=-1))
-            loss = 2 * torch.acos(torch.clamp(cos_half_angle, -1.0, 1.0))
-        elif self.dist_metric == 'qdist3':
-            loss = 1 - torch.abs(torch.sum(q1 * q2, dim=-1))
-        elif self.dist_metric == 'norm':
-            loss = torch.norm(q1 - q2, dim=-1)
+        if self.normal:
+            q1 = self.normalize(q1)
+            q2 = self.normalize(q2)
+        if self.dist_metric == 'phi2':
+            return self.phi2(q1, q2)
+        elif self.dist_metric == 'phi4':
+            return self.phi4(q1, q2)
+        elif self.dist_metric == 'phi5':
+            return self.phi5(q1, q2)
         else:
-            raise ValueError(f'Invalid dist_metric: {self.dist_metric}')
+            raise ValueError('Invalid distance metric')
 
+    def phi2(self, q1, q2):
+        return self.aggregate(torch.min(torch.norm(q1 - q2), torch.norm(q1 + q2)))
+
+    def phi4(self, q1, q2):
+        return self.aggregate(1 - torch.abs(torch.einsum('ij,ij->i', q1, q2)))
+
+    def phi5(self, q1, q2):
+        R1 = self.quat_to_rot(q1)
+        R2 = self.quat_to_rot(q2)
+        return self.aggregate(torch.norm(torch.eye(3, device=q1.device)[None, :, :] - torch.bmm(R1, R2.transpose(-2, -1)), p='fro'))
+
+    def quat_to_rot(self, q):
+        q = self.normalize(q)
+
+        q_r, q_i, q_j, q_k = q.split(1, dim=-1)
+        q_r, q_i, q_j, q_k = q_r.squeeze(-1), q_i.squeeze(-1), q_j.squeeze(-1), q_k.squeeze(-1)
+
+        R = torch.zeros((*q.shape[:-1], 3, 3), device=q.device)
+        R[..., 0, 0] = 1 - 2 * (q_j ** 2 + q_k ** 2)
+        R[..., 0, 1] = 2 * (q_i * q_j - q_k * q_r)
+        R[..., 0, 2] = 2 * (q_i * q_k + q_j * q_r)
+        R[..., 1, 0] = 2 * (q_i * q_j + q_k * q_r)
+        R[..., 1, 1] = 1 - 2 * (q_i ** 2 + q_k ** 2)
+        R[..., 1, 2] = 2 * (q_j * q_k - q_i * q_r)
+        R[..., 2, 0] = 2 * (q_i * q_k - q_j * q_r)
+        R[..., 2, 1] = 2 * (q_j * q_k + q_i * q_r)
+        R[..., 2, 2] = 1 - 2 * (q_i ** 2 + q_j ** 2)
+
+        return R
+    
+    def normalize(self, q):
+        return q / torch.norm(q, dim=-1, keepdim=True)
+
+    def aggregate(self, x):
         if self.agg_type == 'L1':
-            return torch.mean(torch.abs(loss))  # L1 loss (MAE)
+            return torch.mean(torch.abs(x))
         elif self.agg_type == 'L2':
-            return torch.mean(torch.pow(loss, 2))  # L2 loss (MSE)
+            return torch.mean(x ** 2)
+        elif self.agg_type == 'log':
+            return -torch.mean(torch.log(x))
         else:
-            raise ValueError(f'Invalid agg_type: {self.agg_type}')
+            raise ValueError('Invalid aggregation type')
 
 
 input_size = 21
@@ -162,60 +235,55 @@ val_labels, train_labels = train_labels[-val_size:], train_labels[:-val_size]
 
 train_data = train_data.view(train_size, -1, input_size)
 
-def objective(trial):
-    epochs = trial.suggest_int("epochs", 10, 200)
-    optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "SGD", 
-                                                             "Adagrad", "AdamW", 
-                                                             "Adamax", "ASGD", "NAdam", "RAdam"])
+def objective_lstm(trial):
+    hidden_size = trial.suggest_int("hidden_size", 16, 512, log=True)
+    num_layers = trial.suggest_int("num_layers", 1, 10)
+    epochs = 200
+    optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "AdamW", "Adamax", "NAdam", "RAdam"])
 
     model = LSTMOrientation(input_size, hidden_size, num_layers, output_size)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
-    criterion = CustomLoss(dist_metric='norm', agg_type='L1')
+    criterion = CustomLoss()
     
     if optimizer_name == "Adam":
-        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        amsgrad = trial.suggest_categorical("amsgrad", [True, False])
         optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, 
-                               amsgrad=False)
-    elif optimizer_name == "SGD":
-        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
-        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        momentum = trial.suggest_float("momentum", 1e-6, 1e-1, log=True)
-        optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay, 
-                              momentum=momentum, nesterov=True)
-    elif optimizer_name == "Adagrad":
-        learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-1, log=True)
-        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        lr_decay = trial.suggest_float("lr_decay", 1e-6, 1e-1, log=True)
-        optimizer = optim.Adagrad(model.parameters(), lr=learning_rate, weight_decay=weight_decay, 
-                                  lr_decay=lr_decay)
+                               amsgrad=amsgrad, betas=(beta1, beta2))
     elif optimizer_name == "AdamW":
-        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
         amsgrad = trial.suggest_categorical("amsgrad", [True, False])
         optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay,
-                                amsgrad=amsgrad)
+                                amsgrad=amsgrad, betas=(beta1, beta2))
     elif optimizer_name == "Adamax":
-        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        optimizer = optim.Adamax(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    elif optimizer_name == "ASGD":
-        learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-1, log=True)
-        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        lambd = trial.suggest_float("lambd", 1e-6, 1e-3, log=True)
-        optimizer = optim.ASGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay,
-                               lambd=lambd)
+        optimizer = optim.Adamax(model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
     elif optimizer_name == "NAdam":
-        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        momentum_decay = trial.suggest_float("momentum_decay", 1e-6, 1e-1, log=True)
-        optimizer = optim.NAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, 
-                                momentum_decay=momentum_decay)
+        optimizer = optim.NAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
     elif optimizer_name == "RAdam":
-        learning_rate = trial.suggest_float("learning_rate", 1e-5, 1e-2, log=True)
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
         weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
-        optimizer = optim.RAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+        optimizer = optim.RAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
+
+    patience = 20
+    min_valid_loss = np.inf
+    patience_counter = 0
 
     for epoch in range(epochs):
         model.train()
@@ -234,15 +302,202 @@ def objective(trial):
         trial.report(val_loss.item(), epoch)
 
         if trial.should_prune() and epoch > 5:
-            print(f"Trial pruned with value: {val_loss.item()} at epoch {epoch} and parameters {trial.params}")
+            print(f"Trial pruned with value: {val_loss.item()} at epoch {epoch} and parameters {trial.params} \n")
             raise optuna.exceptions.TrialPruned()
         
+        if val_loss < min_valid_loss:
+            min_valid_loss = val_loss
+            patience_counter = 0
+
+        else:
+            patience_counter += 1
+        
+        if patience_counter > patience:
+            break
+        
     return val_loss.item()
+
+def objective_gru(trial):
+    hidden_size = trial.suggest_int("hidden_size", 16, 512, log=True)
+    num_layers = trial.suggest_int("num_layers", 1, 10)
+    epochs = 200
+    optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "AdamW", "Adamax", "NAdam", "RAdam"])
+
+    model = GRUOrientation(input_size, hidden_size, num_layers, output_size)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
+    criterion = CustomLoss()
+    
+    if optimizer_name == "Adam":
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        amsgrad = trial.suggest_categorical("amsgrad", [True, False])
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, 
+                               amsgrad=amsgrad, betas=(beta1, beta2))
+    elif optimizer_name == "AdamW":
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        amsgrad = trial.suggest_categorical("amsgrad", [True, False])
+        optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay,
+                                amsgrad=amsgrad, betas=(beta1, beta2))
+    elif optimizer_name == "Adamax":
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        optimizer = optim.Adamax(model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
+    elif optimizer_name == "NAdam":
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        optimizer = optim.NAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
+    elif optimizer_name == "RAdam":
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        optimizer = optim.RAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
+
+    patience = 20
+    min_valid_loss = np.inf
+    patience_counter = 0
+
+    for epoch in range(epochs):
+        model.train()
+        outputs = model(train_data.to(device))
+        loss = criterion(outputs, train_labels.to(device))
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        model.eval()
+        with torch.no_grad():
+            val_outputs = model(val_data.to(device))
+            val_loss = criterion(val_outputs, val_labels.to(device))
+            
+        trial.report(val_loss.item(), epoch)
+
+        if trial.should_prune() and epoch > 5:
+            print(f"Trial pruned with value: {val_loss.item()} at epoch {epoch} and parameters {trial.params} \n")
+            raise optuna.exceptions.TrialPruned()
+        
+        if val_loss < min_valid_loss:
+            min_valid_loss = val_loss
+            patience_counter = 0
+
+        else:
+            patience_counter += 1
+        
+        if patience_counter > patience:
+            break
+        
+    return val_loss.item()
+
+def objective_rnn(trial):
+    hidden_size = trial.suggest_int("hidden_size", 16, 512, log=True)
+    num_layers = trial.suggest_int("num_layers", 1, 10)
+    epochs = 200
+    optimizer_name = trial.suggest_categorical("optimizer", ["Adam", "AdamW", "Adamax", "NAdam", "RAdam"])
+
+    model = RNNOrientation(input_size, hidden_size, num_layers, output_size)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
+    criterion = CustomLoss()
+    
+    if optimizer_name == "Adam":
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        amsgrad = trial.suggest_categorical("amsgrad", [True, False])
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, 
+                               amsgrad=amsgrad, betas=(beta1, beta2))
+    elif optimizer_name == "AdamW":
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        amsgrad = trial.suggest_categorical("amsgrad", [True, False])
+        optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay,
+                                amsgrad=amsgrad, betas=(beta1, beta2))
+    elif optimizer_name == "Adamax":
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        optimizer = optim.Adamax(model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
+    elif optimizer_name == "NAdam":
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        optimizer = optim.NAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
+    elif optimizer_name == "RAdam":
+        beta1 = trial.suggest_float("beta1", 0.0, 1.0)
+        beta2 = trial.suggest_float("beta2", beta1, 1.0)
+        learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-2, log=True)
+        weight_decay = trial.suggest_float("weight_decay", 1e-6, 1e-1, log=True)
+        optimizer = optim.RAdam(model.parameters(), lr=learning_rate, weight_decay=weight_decay, betas=(beta1, beta2))
+
+    patience = 20
+    min_valid_loss = np.inf
+    patience_counter = 0
+
+    for epoch in range(epochs):
+        model.train()
+        outputs = model(train_data.to(device))
+        loss = criterion(outputs, train_labels.to(device))
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        model.eval()
+        with torch.no_grad():
+            val_outputs = model(val_data.to(device))
+            val_loss = criterion(val_outputs, val_labels.to(device))
+            
+        trial.report(val_loss.item(), epoch)
+
+        if trial.should_prune() and epoch > 5:
+            print(f"Trial pruned with value: {val_loss.item()} at epoch {epoch} and parameters {trial.params} \n")
+            raise optuna.exceptions.TrialPruned()
+        
+        if val_loss < min_valid_loss:
+            min_valid_loss = val_loss
+            patience_counter = 0
+
+        else:
+            patience_counter += 1
+        
+        if patience_counter > patience:
+            break
+        
+    return val_loss.item()
+
+
+N_trials = 200
 
 # to open the optuna dashboard run the following in a separate terminal
 # $ optuna-dashboard sqlite:///optuna_optimizer.db
 # then click on the http link to access the dashboard in your browser
-study = optuna.create_study(direction="minimize", storage='sqlite:///optuna_optimizer.db')
-study.optimize(objective, n_trials=100, n_jobs=5)
+study1 = optuna.create_study(direction="minimize", storage='sqlite:///optuna_optimizer.db', study_name='lstm_orientation_optimizer')
+study1.optimize(objective_lstm, n_trials=N_trials, n_jobs=5)
 
-print(study.best_trial.params)
+print(study1.best_trial.params)
+
+study2 = optuna.create_study(direction="minimize", storage='sqlite:///optuna_optimizer.db', study_name='gru_orientation_optimizer')
+study2.optimize(objective_gru, n_trials=N_trials, n_jobs=5)
+
+print(study2.best_trial.params)
+
+study3 = optuna.create_study(direction="minimize", storage='sqlite:///optuna_optimizer.db', study_name='rnn_orientation_optimizer')
+study3.optimize(objective_rnn, n_trials=N_trials, n_jobs=5)
+
+print(study3.best_trial.params)
