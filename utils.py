@@ -156,7 +156,7 @@ def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_lengt
                 # one hot encode labels
                 onehot_encoder = OneHotEncoder()
                 onehot_encoded = onehot_encoder.fit_transform(labels)
-                cluster_labels[dir] = onehot_encoded
+                cluster_labels[dir] = onehot_encoded.toarray()
 
     data = {
         'X-train': {key: None for key in columns_X},
@@ -174,6 +174,7 @@ def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_lengt
             new_data_dict = load_data(file_path)
             if include_clusters:
                 new_data_dict['cluster_labels'] = cluster_labels[dir]
+                print(new_data_dict['cluster_labels'].shape)
         if dir in test_dir:
             
             start = 0 if not random_start else np.random.randint(0, 20000)
@@ -225,8 +226,9 @@ def normalize_features(X, scaler=None):
         scaler = StandardScaler()
     X_normalized = scaler.fit_transform(X)
     return X_normalized, scaler
-
-def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\\AppliedML\\Project 2\\train_dataset_1', **kwargs):
+git 
+def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\\AppliedML\\Project 2\\train_dataset_1',\
+                    return_scaler = False, **kwargs):
     """
     Function to load, split, and preprocess the data.
 
@@ -383,8 +385,10 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
     X_test_reshaped, y_test_reshaped = create_sequences(X_test, y_test, 
                                                         seq_length=params['seq_len'], 
                                                         overlap=params['overlap'])
-
-    return X_train_reshaped, y_train_reshaped, X_test_reshaped, y_test_reshaped, col_locations
+    if return_scaler:
+        return X_train_reshaped, y_train_reshaped, X_test_reshaped, y_test_reshaped, col_locations, scaler
+    else:
+        return X_train_reshaped, y_train_reshaped, X_test_reshaped, y_test_reshaped, col_locations
 
 def split_data(X, y, test_size=0.2):
     indicies = np.arange(X.shape[0])
