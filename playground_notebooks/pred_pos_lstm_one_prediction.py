@@ -122,7 +122,7 @@ def main():
      ## Set central parameters
     # set whether to include clustered labels
      load_model, do_training, do_simple_testing, do_many_tests, do_testing, plot_testing, do_hyperparameter_search \
-          = False, False, False, False, False, False, True
+          = False, True, False, True, False, False, False
      include_clusters = False
 
      # set whether to predict only the last value per sequence
@@ -162,9 +162,8 @@ def main():
      include_game_rv = False
      include_gps = False
      
-     {'epochs': 117, 'hidden_size': 74, 'learning_rate': 0.00017326141536061154, 'num_layers': 3, 'seq_len': 35}
 
-     learning_rate = 8e-5
+     learning_rate = 3.6e-4
      # Set loss function
      criterion = nn.MSELoss()
      # set n_epochs
@@ -174,9 +173,9 @@ def main():
      seq_len = 30
      dt = 1 / 200
 
-     num_epochs = 35  
+     num_epochs = 47 
       # set size of hidden layers
-     hidden_size = 158
+     hidden_size = 58
      # set batch size
      batch_size = 64
      # set no. of layers in LSTM

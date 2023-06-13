@@ -88,7 +88,7 @@ class Net(nn.Module):
 
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
-    def __init__(self, patience=7, verbose=False, delta=0):
+    def __init__(self, patience=7, verbose=False, delta=0,):
         self.patience = patience
         self.verbose = verbose
         self.counter = 0
@@ -111,10 +111,10 @@ class EarlyStopping:
                 self.early_stop = True
         else:
             self.best_score = score
-            self.save_checkpoint(val_loss, model)
+            self.save_checkpoint(val_loss, model,)
             self.counter = 0
 
-    def save_checkpoint(self, val_loss, model):
+    def save_checkpoint(self, val_loss, model,):
         '''Saves model when validation loss decrease.'''
         if self.verbose:
             print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
@@ -122,9 +122,7 @@ class EarlyStopping:
         self.val_loss_min = val_loss
 
 
-
-def load_and_prepare_data(folder_path, params, batch_size, Nval_fraction, shuffle, use_full_quarternions = False, \
-                               pred_only_last = False, include_filtered_features=False):
+def load_and_prepare_data(folder_path, params, batch_size, Nval_fraction, shuffle, use_full_quarternions = False, include_filtered_features=False):
      # Load data
      X_train, y_train, X_test, y_test, _, scaler = load_split_data(folder_path=folder_path, return_scaler=True, **params)
 
@@ -218,12 +216,6 @@ def load_and_prepare_data(folder_path, params, batch_size, Nval_fraction, shuffl
      Noutput_features = output_size
      Nfeatures = X_train.shape[-1]
 
-     if pred_only_last:
-          # Include only the last true value in each sequence
-          y_train_arr = y_train_arr[:,-1,:]#.reshape(y_train.shape[0], - 1)
-          y_val_arr = y_val_arr[:,-1,:]#.reshape(y_val.shape[0], - 1)
-          y_test = y_test[:,-1,:]#.reshape(y_test.shape[0], - 1)
-
      # convert to torch tensors
      X_train = torch.from_numpy(X_train_arr).float()
      y_train = torch.from_numpy(y_train_arr).float()
@@ -245,6 +237,53 @@ def load_and_prepare_data(folder_path, params, batch_size, Nval_fraction, shuffl
      return train_dataset, val_dataset, test_dataset, train_loader, val_loader,\
                test_loader, output_size, Nfeatures, Noutput_features, y_test_offset, scaler
       
+def train(model, num_epochs, train_loader, \
+          val_loader, optimizer, criterion, device, \
+          early_stopping, save_model = False, model_name = 'model.pt'):
+          t_start = time.time()
+          for epoch in range(num_epochs):
+               running_loss = 0.0
+               n_minibatches = 0
+               model.train()
+               for inputs, labels in train_loader:
+                    inputs, labels = inputs.to(device), labels.to(device)
+                    optimizer.zero_grad() 
+                    outputs = model(inputs)
+                    
+                    loss = criterion(outputs, labels)
+                    loss.backward()
+                    optimizer.step()
+                    running_loss += loss.item()
+                    n_minibatches += 1
+               print('Epoch %d, loss: %.5f' % (epoch+1, running_loss/n_minibatches))
+
+               # Validate
+               model.eval()
+               with torch.no_grad():
+                    running_loss = 0.0
+                    n_minibatches = 0
+                    for inputs, labels in val_loader:
+                         inputs, labels = inputs.to(device), labels.to(device)
+                         outputs = model(inputs)
+                    
+                         loss = criterion(outputs, labels)
+                         running_loss += loss.item()
+                         n_minibatches += 1
+                    print('Test loss: %.5f' % (running_loss/n_minibatches))
+
+                    early_stopping(running_loss/n_minibatches, model,)
+                    if early_stopping.early_stop:
+                              print("Early stopping")
+                              break
+
+          t_end = time.time()
+          print("Training time: ", np.round(t_end - t_start,2), " seconds")
+
+          # best model is saved automatically with model_name if early stopped. Else save
+          if not early_stopping.early_stop and save_model:
+               torch.save(model.state_dict(), model_name)
+
+
 ### MAIN ---------------------------------------------------------------------------------------
 
 def main():
@@ -254,22 +293,21 @@ def main():
     # Set what to do
      model_name = 'gru'
      architecture = nn.GRU
-     load_model, do_training, do_testing, do_hyperparameter_search,  = False, False, False, True
+     load_model, do_training, do_testing, do_hyperparameter_search,  = False, True, False, False
 
      # Set whether to use full quarternions or transform to unit vectors of the plane
      use_full_quarternions = True
-     # set whether to predict only the last value per sequence
-     pred_only_last = True
      # set whether to test on same dataset (but unseen points)
      shuffle = True
      normalize = True
+   
     
      # Set how many  observations to combine into one datapoint
-     Ntrain = 1_200_000 #1_500_000 # 4_500_000  #3_000_000 + 1_500_000
+     Ntrain = 2000
      Ntest = 1000
      Ntest_fraction = Ntest / Ntrain
      Nval_fraction = .2
-     num_datasets =  int(Ntrain / 60_000) # int(Ntrain / 60_000)  
+     num_datasets =  max(1, int(Ntrain / 60_000)) # int(Ntrain / 60_000)  
      folder_path = folder_path1 if num_datasets < 50 else folder_path_full
      random_start = True
      
@@ -284,7 +322,7 @@ def main():
      include_EKF = True
 
      ## Set network parameters
-     num_epochs = 85   # set size of hidden layers
+     num_epochs = 100   # set size of hidden layers
      batch_size = 64
      learning_rate = 10e-6
      # Set loss function
@@ -314,7 +352,7 @@ def main():
      train_dataset, val_dataset, test_dataset, train_loader, val_loader,\
                  test_loader, output_size, Nfeatures, Noutput_features, y_test_offset, scaler = \
                  load_and_prepare_data(folder_path=folder_path, params=params, batch_size=batch_size, Nval_fraction=Nval_fraction, \
-                    shuffle=shuffle, use_full_quarternions=use_full_quarternions, pred_only_last=pred_only_last,)
+                    shuffle=shuffle, use_full_quarternions=use_full_quarternions,)
      
      # setting device on GPU if available, else CPU
      device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -337,51 +375,15 @@ def main():
      
      # optimizer
      optimizer = optim.Adam(net.parameters(), lr=learning_rate)
-     t_start = time.time()
+     
+     early_stopping = EarlyStopping(patience=5, verbose=True,)
 
-     early_stopping = EarlyStopping(patience=50, verbose=True)
-
+     
      if do_training:
-          # TRAIN -----------------------------------------------------------
-          for epoch in range(num_epochs):
-               running_loss = 0.0
-               n_minibatches = 0
-               net.train()
-               for inputs, labels in train_loader:
-                    inputs, labels = inputs.to(device), labels.to(device)
-                    optimizer.zero_grad() 
-                    outputs = net(inputs)
-                    
-                    loss = criterion(outputs, labels)
-                    loss.backward()
-                    optimizer.step()
-                    running_loss += loss.item()
-                    n_minibatches += 1
-               print('Epoch %d, loss: %.5f' % (epoch+1, running_loss/n_minibatches))
+          train(model = net, num_epochs = num_epochs, train_loader=train_loader, \
+                    val_loader=val_loader, optimizer=optimizer, criterion=criterion, device=device, \
+                         early_stopping=early_stopping, save_model = True, model_name =f'./{model_name}_full_pred.pt')
 
-               # Validate
-               net.eval()
-               with torch.no_grad():
-                    running_loss = 0.0
-                    n_minibatches = 0
-                    for inputs, labels in val_loader:
-                         inputs, labels = inputs.to(device), labels.to(device)
-                         outputs = net(inputs)
-                    
-                         loss = criterion(outputs, labels)
-                         running_loss += loss.item()
-                         n_minibatches += 1
-                    print('Test loss: %.5f' % (running_loss/n_minibatches))
-
-                    early_stopping(running_loss/n_minibatches, net)
-                    if early_stopping.early_stop:
-                              print("Early stopping")
-                              break
-
-          t_end = time.time()
-          print("Training time: ", np.round(t_end - t_start,2), " seconds")
-
-          torch.save(net.state_dict(), f'./{model_name}_full_pred.pt')
 
      if do_hyperparameter_search:
           # Hyperparameter search -----------------------------------------------------------
@@ -465,7 +467,7 @@ def main():
           # load model
           net = Net(architecture = architecture, input_size=Nfeatures, output_size = output_size,hidden_size=hidden_size,\
                num_layers=num_layers,  seq_len=seq_len, dropout=dropout_layer)
-          net.load_state_dict(torch.load('gru_full_pred.pt'))
+          net.load_state_dict(torch.load(f'./{model_name}_full_pred.pt'))
           net.to(device)
           net.eval()
 
@@ -622,8 +624,6 @@ def main():
                ax2[i].plot(q_gts[:,0], q_gts[:,1], alpha=.7, label = gt_label, color='green')
                ax2[i].plot(q_preds[:,0], q_preds[:,1], alpha=.7, label = pred_label, color='red')
           
-          #  ax2[i].set_xlabel('x (m)')
-          # ax2[i].set_ylabel('y (m)')
                d = dict(ATE = ATE, RTE = RTE, Time = Nseconds)
                text = nice_string_output(d, extra_spacing=2, decimals=2)
                add_text_to_ax(0.1, 0.95, text, ax2[i], fontsize=13)
@@ -635,94 +635,7 @@ def main():
           print('Average ATE: ', ATE_arr.mean(), "\u00b1", ATE_arr.std(ddof=1))
           print('Average RTE: ', RTE_arr.mean(), "\u00b1", RTE_arr.std(ddof=1))
 
-          plt.savefig(f'{model_name}_preds.png', dpi=420, transparent=True,)
-
-          if 0:
-
-               y_pred = []
-               pred_list = [y_pred]
-               loaders = [test_loader]
-               if plot_train_val_predictions:
-                    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=False)
-                    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=1, shuffle=False)
-                    y_pred_train = []
-                    y_pred_val = []  
-                    pred_list = [y_pred, y_pred_train, y_pred_val]
-                    loaders = [test_loader, train_loader, val_loader]
-               for j, pred in enumerate(pred_list):
-                    if use_truth_input:
-                         with torch.no_grad():
-                              for i, (inputs, labels) in enumerate(loaders[j]):
-                                   inputs, labels = inputs.to(device), labels.to(device)
-                                   if i > 10:
-                                             # copy last prediction to input
-                                             inputs[:,0,-Noutput_features:] = y_pred_tensor[0]
-
-                                   outputs = net(inputs)
-                                   # copy to cpu and store prediction
-                                   outputs_cpu = torch.Tensor.cpu(outputs)
-                                   pred.append(outputs_cpu.numpy())
-                                   y_pred_tensor = outputs
-                    else:
-                         with torch.no_grad():
-                              for i, (inputs, labels) in enumerate(loaders[j]):
-                                   inputs, labels = inputs.to(device), labels.to(device)
-                         
-                                   outputs = net(inputs)    
-                                   # copy to cpu and store prediction
-                                   outputs_cpu = torch.Tensor.cpu(outputs)
-                                   pred.append(outputs_cpu.numpy())
-                                   y_pred_tensor = outputs
-               
-
-
-               
-
-
-               nrows = 1 if Noutput_features == 3 else 2
-               ncols = 3 if Noutput_features == 3 else 2
-
-               fig2, ax2 = plt.subplots()
-               pred_true = [y_test, y_train_arr, y_val_arr]
-               pred_offset = [y_test_offset, y_train_offset, y_val_offset]
-               name_list = ['Test', 'Train', 'Validation']
-               marker_list = ['-','--','--']
-               alpha_list = [0.8,0.4,0.4]
-               color_list_true = ['green', 'olive', 'green']
-               color_list_pred = ['red', 'plum', 'red']
-
-               for i, pred in enumerate(pred_list):
-
-          
-                    y_pred = np.array(pred)
-                    y_pred = y_pred.reshape(-1, Noutput_features)
-                    y_pred = y_pred + np.vstack([pred_offset[i][0,:], pred_offset[i][0,:] + np.cumsum(y_pred[:-1], axis=0)])
-                    # start predictions at the initial ground truth position
-                    y_pred = np.vstack([pred_offset[i][0,:], y_pred])
-                    # Include only as many test points as is divisible by batch size
-                    q_gts = pred_true[i].reshape(-1, Noutput_features)
-                    q_gts = q_gts + pred_offset[i]
-                    q_gts = np.vstack([pred_offset[i][0,:], q_gts])
-                    q_preds = y_pred
-                    xs = np.arange(len(q_gts))
-
-                    ATE = np.sqrt(((q_gts - y_pred) ** 2).sum(axis=1)).mean()
-                    RTE = ATE * (60 * (1/dt) / seq_len) / (Ntest / seq_len) if Ntest / seq_len <= 60 else ATE
-
-                    if i == 0:
-                         print("Predicting positions for ", Ntest * dt, " seconds in ", Ntest  /seq_len, " steps")
-                    print(f'{name_list[i]} ATE: {ATE:.3f} m')
-                    print(f'{name_list[i]} RTE: {RTE:.3f} m')
-
-                    if pred_position_in_2D:
-                         
-                         ax2.plot(q_gts[:,0], q_gts[:,1], f'{marker_list[i]}', alpha=alpha_list[i], label = f'GT for {name_list[i]}', color=f'{color_list_true[i]}')
-                         ax2.plot(q_preds[:,0], q_preds[:,1], f'{marker_list[i]}', alpha=alpha_list[i], label = f'Pred for {name_list[i]}', color=f'{color_list_pred[i]}')
-
-                         ax2.legend()
-                         ax2.set_xlabel('x (m)')
-                         ax2.set_ylabel('y (m)')
-
+          plt.savefig(f'./{model_name}_full_pred.pt', dpi=420, transparent=True,)
 
 
      plt.show()
