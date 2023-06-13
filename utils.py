@@ -226,7 +226,7 @@ def normalize_features(X, scaler=None):
         scaler = StandardScaler()
     X_normalized = scaler.fit_transform(X)
     return X_normalized, scaler
-git 
+
 def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\\AppliedML\\Project 2\\train_dataset_1',\
                     return_scaler = False, **kwargs):
     """
