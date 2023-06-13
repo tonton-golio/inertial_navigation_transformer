@@ -156,7 +156,8 @@ def load_much_data(N_train, N_test, folder_path, columns_X, columns_y, seq_lengt
                 # one hot encode labels
                 onehot_encoder = OneHotEncoder()
                 onehot_encoded = onehot_encoder.fit_transform(labels)
-                cluster_labels[dir] = onehot_encoded
+                print(onehot_encoded.shape, type(onehot_encoded))
+                cluster_labels[dir] = onehot_encoded.toarray()
 
     data = {
         'X-train': {key: None for key in columns_X},
@@ -365,7 +366,8 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
         col_locations['output'][col] = (counta_output, counta_output+width)
         counta_output += width
     
-
+    for key in params['input']:
+        print(key, data['X-train'][key].shape)
     X_train = np.hstack([data['X-train'][key] for key in params['input']])
     y_train = np.hstack([data['y-train'][key] for key in params['output']])
     X_test = np.hstack([data['X-test'][key] for key in params['input']])
