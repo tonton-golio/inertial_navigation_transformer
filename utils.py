@@ -367,7 +367,8 @@ def load_split_data(folder_path='C:\\Users\\Simon Andersen\\Documents\\Uni\\KS6\
         col_locations['output'][col] = (counta_output, counta_output+width)
         counta_output += width
     
-
+    for key in params['input']:
+        print(key, data['X-train'][key].shape)
     X_train = np.hstack([data['X-train'][key] for key in params['input']])
     y_train = np.hstack([data['y-train'][key] for key in params['output']])
     X_test = np.hstack([data['X-test'][key] for key in params['input']])
