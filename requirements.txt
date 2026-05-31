@@ -1,0 +1,12 @@
+# Runtime dependencies for the `ninav` package.
+# Pinned to the versions currently installed in the project venv
+# (.venv/bin/python -m importlib.metadata). Regenerate after upgrading.
+numpy==2.4.6
+scipy==1.17.1
+scikit-learn==1.8.0
+torch==2.12.0
+h5py==3.16.0
+matplotlib==3.10.9
+
+# Optional test dependency (see [project.optional-dependencies].test in pyproject.toml)
+# pytest==9.0.3

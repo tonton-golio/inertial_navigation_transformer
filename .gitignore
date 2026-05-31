@@ -163,3 +163,19 @@ cython_debug/
 *.npz
 *.png
 *.csv
+
+# --- ninav project-specific ---
+# Virtualenv (also matched by the generic .venv rule above; explicit for clarity)
+.venv/
+# Training / experiment outputs: checkpoints (*.pt covered above), logs, metrics
+runs/
+# Local NINAV data / cache directories
+data/cache/
+synthetic_data/
+NINAV_data/
+*.h5
+*.hdf5
+# Editor / OS cruft
+.DS_Store
+.idea/
+.vscode/
